@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Nutrition Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.6/babel.min.js"></script>
+<script src="config.js"></script>
+<style>
+  :root{
+    --bg:#0d0e0f; --surface:#161719; --surface2:#1d1f21; --line:rgba(255,255,255,.08);
+    --line2:rgba(255,255,255,.14); --txt:#f2f1ee; --txt2:#9b9a96; --txt3:#6b6a66;
+    --green:#1d9e75; --greenT:#0f6e56; --blue:#378add; --amber:#ba7517; --amber2:#ef9f27;
+    --gray:#888780; --radlg:14px; --radmd:9px;
+    --mono:'SF Mono',ui-monospace,'Cascadia Code',Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;line-height:1.5;padding:32px 20px;min-height:100vh}
+  .wrap{max-width:780px;margin:0 auto}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  input,button{font-family:inherit;font-size:14px;color:var(--txt);outline:none}
+  input{background:var(--surface);border:0.5px solid var(--line2);border-radius:var(--radmd);
+    padding:0 14px;height:42px;width:100%}
+  input:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(29,158,117,.15)}
+  input::placeholder{color:var(--txt3)}
+  button{background:var(--green);border:none;border-radius:var(--radmd);padding:0 20px;
+    height:42px;font-weight:500;cursor:pointer;transition:opacity .15s;white-space:nowrap}
+  button:hover{opacity:.88} button:active{transform:scale(.98)}
+  button.ghost{background:transparent;border:0.5px solid var(--line2);color:var(--txt2)}
+  .card{background:var(--surface);border:0.5px solid var(--line);border-radius:var(--radlg)}
+  .macro{background:var(--surface);border:0.5px solid var(--line);border-radius:var(--radlg);
+    padding:15px;cursor:pointer;transition:border-color .15s,transform .1s;text-align:left;width:100%}
+  .macro:hover{border-color:var(--line2)} .macro:active{transform:scale(.99)}
+  .macro.open{border-color:var(--line2)}
+  .bar{height:4px;background:var(--line);border-radius:2px;margin-top:11px;overflow:hidden}
+  .bar>div{height:100%;border-radius:2px;transition:width .4s ease}
+  .chip{border:0.5px solid var(--line);border-radius:var(--radmd);padding:10px 12px}
+  .fadein{animation:fade .25s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+  .aarow{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:0.5px solid var(--line)}
+  .aabar{flex:1;height:5px;background:var(--line);border-radius:3px;overflow:hidden}
+  .aabar>div{height:100%;background:var(--greenT);border-radius:3px}
+  .src{display:flex;justify-content:space-between;padding:9px 0;border-bottom:0.5px solid var(--line);font-size:13px}
+  .logrow{display:flex;justify-content:space-between;align-items:center;padding:13px 16px;border-bottom:0.5px solid var(--line)}
+  .logrow:last-child{border-bottom:none}
+  .del{color:var(--txt3);cursor:pointer;font-size:18px;line-height:1;padding:0 4px;background:none;border:none;height:auto;width:auto}
+  .del:hover{color:#e24b4a}
+  .sug{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}
+  .sug button{background:var(--surface2);border:0.5px solid var(--line);color:var(--txt2);
+    height:32px;padding:0 12px;font-size:12.5px;font-weight:400}
+  .sug button:hover{border-color:var(--line2);opacity:1}
+  h1{font-size:23px;font-weight:600;letter-spacing:-.02em}
+  .lbl{font-size:12px;color:var(--txt2)} .lbl2{font-size:11px;color:var(--txt3)}
+  .statusGood{color:var(--green)} .statusLow{color:var(--amber2)}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const {useState,useMemo,useEffect} = React;
+
+// Loaded from config.js — null if the file is missing or the key is empty.
+// To add USDA search: replace this with a real backend proxy that holds the key server-side.
+const USDA_API_KEY = (typeof window.USDA_API_KEY === "string" && window.USDA_API_KEY.trim())
+  ? window.USDA_API_KEY.trim()
+  : null;
+
+// ---- DATA (inlined from foodData.js for single-file portability) ----
+const MICRO_META = {
+  iron:{label:"Iron",unit:"mg",rda:8}, calcium:{label:"Calcium",unit:"mg",rda:1000},
+  potassium:{label:"Potassium",unit:"mg",rda:3400}, magnesium:{label:"Magnesium",unit:"mg",rda:400},
+  zinc:{label:"Zinc",unit:"mg",rda:11}, vitC:{label:"Vitamin C",unit:"mg",rda:90},
+  vitD:{label:"Vitamin D",unit:"mcg",rda:15}, vitA:{label:"Vitamin A",unit:"mcg",rda:900},
+  vitB12:{label:"Vitamin B12",unit:"mcg",rda:2.4}, folate:{label:"Folate",unit:"mcg",rda:400},
+  sodium:{label:"Sodium",unit:"mg",rda:2300},
+};
+const ESSENTIAL_AA=["histidine","isoleucine","leucine","lysine","methionine","phenylalanine","threonine","tryptophan","valine"];
+const NONESSENTIAL_AA=["alanine","arginine","aspartate","cystine","glutamate","glycine","proline","serine","tyrosine"];
+const TARGETS={kcal:2000,protein:200,carb:180,fat:60,fiber:30};
+
+const FOODS=[
+  {id:"chicken_breast",name:"Chicken breast, skinless",category:"protein",perUnit:{label:"100g",grams:100},unit:{type:"gram"},
+   macros:{kcal:165,protein:31,carb:0,fat:3.6,fiber:0},
+   carbProfile:{sugars:0,starch:0,addedSugar:0},
+   fatProfile:{sat:1.0,mono:1.2,poly:0.8,omega3:0.03,omega6:0.55},
+   fiberProfile:{soluble:0,insoluble:0},
+   amino:{histidine:950,isoleucine:1630,leucine:2330,lysine:2640,methionine:860,phenylalanine:1230,threonine:1310,tryptophan:360,valine:1540,alanine:1690,arginine:1870,aspartate:2770,cystine:410,glutamate:4640,glycine:1490,proline:1230,serine:1070,tyrosine:1040},
+   micros:{iron:1.0,calcium:15,potassium:256,magnesium:29,zinc:1.0,vitC:0,vitD:0.1,vitA:9,vitB12:0.3,folate:4,sodium:74}},
+  {id:"whole_egg",name:"Egg, whole",category:"protein",perUnit:{label:"1 large (50g)",grams:50},
+   unit:{type:"piece",label:"egg",gramsEach:50},
+   macros:{kcal:143,protein:12.6,carb:0.7,fat:9.5,fiber:0},
+   carbProfile:{sugars:0.4,starch:0,addedSugar:0},
+   fatProfile:{sat:3.1,mono:3.7,poly:1.9,omega3:0.08,omega6:1.6},
+   fiberProfile:{soluble:0,insoluble:0},
+   amino:{histidine:309,isoleucine:672,leucine:1086,lysine:912,methionine:380,phenylalanine:680,threonine:556,tryptophan:167,valine:858,alanine:736,arginine:820,aspartate:1330,cystine:272,glutamate:1650,glycine:432,proline:500,serine:970,tyrosine:500},
+   micros:{iron:1.8,calcium:56,potassium:138,magnesium:12,zinc:1.3,vitC:0,vitD:2.0,vitA:160,vitB12:0.9,folate:47,sodium:142},
+   variants:[
+     {id:"whole",label:"Whole",
+      macros:{kcal:143,protein:12.6,carb:0.7,fat:9.5,fiber:0},
+      carbProfile:{sugars:0.4,starch:0,addedSugar:0},
+      fatProfile:{sat:3.1,mono:3.7,poly:1.9,omega3:0.08,omega6:1.6},
+      fiberProfile:{soluble:0,insoluble:0},
+      amino:{histidine:309,isoleucine:672,leucine:1086,lysine:912,methionine:380,phenylalanine:680,threonine:556,tryptophan:167,valine:858,alanine:736,arginine:820,aspartate:1330,cystine:272,glutamate:1650,glycine:432,proline:500,serine:970,tyrosine:500},
+      micros:{iron:1.8,calcium:56,potassium:138,magnesium:12,zinc:1.3,vitC:0,vitD:2.0,vitA:160,vitB12:0.9,folate:47,sodium:142}},
+     {id:"whites",label:"Whites only",
+      macros:{kcal:52,protein:11,carb:0.7,fat:0.2,fiber:0},
+      carbProfile:{sugars:0.3,starch:0,addedSugar:0},
+      fatProfile:{sat:0.03,mono:0.01,poly:0.04,omega3:0.0,omega6:0.04},
+      fiberProfile:{soluble:0,insoluble:0},
+      amino:{histidine:237,isoleucine:532,leucine:847,lysine:700,methionine:316,phenylalanine:560,threonine:446,tryptophan:148,valine:672,alanine:591,arginine:646,aspartate:1054,cystine:248,glutamate:1411,glycine:341,proline:331,serine:699,tyrosine:390},
+      micros:{iron:0.1,calcium:7,potassium:163,magnesium:11,zinc:0.03,vitC:0,vitD:0,vitA:0,vitB12:0.09,folate:4,sodium:166}},
+     {id:"boiled",label:"Boiled",
+      macros:{kcal:143,protein:12.6,carb:0.7,fat:9.5,fiber:0},
+      carbProfile:{sugars:0.4,starch:0,addedSugar:0},
+      fatProfile:{sat:3.1,mono:3.7,poly:1.9,omega3:0.08,omega6:1.6},
+      fiberProfile:{soluble:0,insoluble:0},
+      amino:{histidine:309,isoleucine:672,leucine:1086,lysine:912,methionine:380,phenylalanine:680,threonine:556,tryptophan:167,valine:858,alanine:736,arginine:820,aspartate:1330,cystine:272,glutamate:1650,glycine:432,proline:500,serine:970,tyrosine:500},
+      micros:{iron:1.8,calcium:56,potassium:138,magnesium:12,zinc:1.3,vitC:0,vitD:2.0,vitA:160,vitB12:0.9,folate:47,sodium:142}},
+     {id:"omelette",label:"Omelette",
+      macros:{kcal:233,protein:12.6,carb:0.7,fat:19.5,fiber:0},
+      carbProfile:{sugars:0.4,starch:0,addedSugar:0},
+      fatProfile:{sat:9.3,mono:6.6,poly:2.3,omega3:0.13,omega6:1.82},
+      fiberProfile:{soluble:0,insoluble:0},
+      amino:{histidine:309,isoleucine:672,leucine:1086,lysine:912,methionine:380,phenylalanine:680,threonine:556,tryptophan:167,valine:858,alanine:736,arginine:820,aspartate:1330,cystine:272,glutamate:1650,glycine:432,proline:500,serine:970,tyrosine:500},
+      micros:{iron:1.8,calcium:56,potassium:138,magnesium:12,zinc:1.3,vitC:0,vitD:2.0,vitA:244,vitB12:0.9,folate:47,sodium:142}},
+   ]},
+  {id:"whey_gold",name:"Whey — Gold Standard",brand:"Optimum Nutrition",category:"protein",perUnit:{label:"1 scoop (31g)",grams:31},unit:{type:"serving",label:"scoop",gramsEach:31},
+   macros:{kcal:387,protein:77,carb:10,fat:5,fiber:0},
+   carbProfile:{sugars:12,starch:null,addedSugar:6},
+   fatProfile:{sat:3.2,mono:null,poly:null,omega3:null,omega6:null},
+   fiberProfile:{soluble:null,insoluble:null},
+   amino:{histidine:1300,isoleucine:4900,leucine:8000,lysine:7100,methionine:1700,phenylalanine:2300,threonine:5200,tryptophan:1400,valine:4500,alanine:null,arginine:null,aspartate:null,cystine:1900,glutamate:null,glycine:null,proline:null,serine:null,tyrosine:null},
+   micros:{iron:1.0,calcium:480,potassium:580,magnesium:50,zinc:1.2,vitC:0,vitD:0,vitA:0,vitB12:1.5,folate:0,sodium:280}},
+  {id:"oikos_pro",name:"Oikos Pro yogurt, plain",brand:"Danone",category:"protein",perUnit:{label:"1 cup (227g)",grams:227},unit:{type:"serving",label:"cup",gramsEach:227},
+   macros:{kcal:79,protein:13.2,carb:5.3,fat:0.9,fiber:0},
+   carbProfile:{sugars:4.0,starch:0,addedSugar:0},
+   fatProfile:{sat:0.5,mono:0.2,poly:0.05,omega3:null,omega6:null},
+   fiberProfile:{soluble:0,insoluble:0},
+   amino:{histidine:330,isoleucine:700,leucine:1280,lysine:1150,methionine:340,phenylalanine:680,threonine:590,tryptophan:180,valine:870,alanine:null,arginine:null,aspartate:null,cystine:null,glutamate:null,glycine:null,proline:null,serine:null,tyrosine:null},
+   micros:{iron:0.05,calcium:141,potassium:200,magnesium:13,zinc:0.6,vitC:0,vitD:0,vitA:2,vitB12:0.6,folate:11,sodium:46}},
+  {id:"white_rice",name:"White rice, cooked",category:"carb",perUnit:{label:"1 cup (158g)",grams:158},unit:{type:"gram"},
+   macros:{kcal:130,protein:2.7,carb:28,fat:0.3,fiber:0.4},
+   carbProfile:{sugars:0.1,starch:27,addedSugar:0},
+   fatProfile:{sat:0.08,mono:0.1,poly:0.08,omega3:0.01,omega6:0.07},
+   fiberProfile:{soluble:0.0,insoluble:0.4},
+   amino:{histidine:60,isoleucine:110,leucine:220,lysine:95,methionine:60,phenylalanine:140,threonine:95,tryptophan:30,valine:160,alanine:null,arginine:null,aspartate:null,cystine:null,glutamate:null,glycine:null,proline:null,serine:null,tyrosine:null},
+   micros:{iron:0.2,calcium:10,potassium:35,magnesium:12,zinc:0.5,vitC:0,vitD:0,vitA:0,vitB12:0,folate:58,sodium:1}},
+  {id:"mission_carb_balance",name:"Carb Balance tortilla",brand:"Mission",category:"carb",perUnit:{label:"1 tortilla (42g)",grams:42},unit:{type:"serving",label:"tortilla",gramsEach:42},
+   macros:{kcal:190,protein:12,carb:43,fat:10,fiber:38},
+   carbProfile:{sugars:0,starch:null,addedSugar:0},
+   fatProfile:{sat:2.4,mono:null,poly:null,omega3:null,omega6:null},
+   fiberProfile:{soluble:null,insoluble:null},
+   amino:null,
+   micros:{iron:3.6,calcium:120,potassium:100,magnesium:24,zinc:0.8,vitC:0,vitD:0,vitA:0,vitB12:0,folate:90,sodium:950}},
+  {id:"banana",name:"Banana",category:"fruit",perUnit:{label:"1 medium (118g)",grams:118},unit:{type:"piece",label:"banana",gramsEach:118},
+   macros:{kcal:89,protein:1.1,carb:23,fat:0.3,fiber:2.6},
+   carbProfile:{sugars:12,starch:5.4,addedSugar:0},
+   fatProfile:{sat:0.1,mono:0.03,poly:0.07,omega3:0.03,omega6:0.05},
+   fiberProfile:{soluble:0.7,insoluble:1.9},
+   amino:{histidine:77,isoleucine:28,leucine:68,lysine:50,methionine:8,phenylalanine:49,threonine:28,tryptophan:9,valine:47,alanine:null,arginine:null,aspartate:null,cystine:null,glutamate:null,glycine:null,proline:null,serine:null,tyrosine:null},
+   micros:{iron:0.3,calcium:5,potassium:358,magnesium:27,zinc:0.2,vitC:8.7,vitD:0,vitA:3,vitB12:0,folate:20,sodium:1}},
+  {id:"spinach",name:"Spinach, raw",category:"vegetable",perUnit:{label:"1 cup (30g)",grams:30},unit:{type:"gram"},
+   macros:{kcal:23,protein:2.9,carb:3.6,fat:0.4,fiber:2.2},
+   carbProfile:{sugars:0.4,starch:0,addedSugar:0},
+   fatProfile:{sat:0.06,mono:0.01,poly:0.16,omega3:0.14,omega6:0.02},
+   fiberProfile:{soluble:0.6,insoluble:1.6},
+   amino:{histidine:64,isoleucine:147,leucine:223,lysine:174,methionine:53,phenylalanine:129,threonine:122,tryptophan:39,valine:161,alanine:null,arginine:null,aspartate:null,cystine:null,glutamate:null,glycine:null,proline:null,serine:null,tyrosine:null},
+   micros:{iron:2.7,calcium:99,potassium:558,magnesium:79,zinc:0.5,vitC:28,vitD:0,vitA:469,vitB12:0,folate:194,sodium:79}},
+  {id:"almonds",name:"Almonds",category:"fat",perUnit:{label:"1 oz (28g)",grams:28},unit:{type:"gram"},
+   macros:{kcal:579,protein:21,carb:22,fat:50,fiber:12.5},
+   carbProfile:{sugars:4.4,starch:0.7,addedSugar:0},
+   fatProfile:{sat:3.8,mono:31,poly:12,omega3:0.003,omega6:12},
+   fiberProfile:{soluble:0.9,insoluble:11.6},
+   amino:{histidine:540,isoleucine:750,leucine:1490,lysine:580,methionine:150,phenylalanine:1130,threonine:600,tryptophan:210,valine:820,alanine:null,arginine:null,aspartate:null,cystine:null,glutamate:null,glycine:null,proline:null,serine:null,tyrosine:null},
+   micros:{iron:3.7,calcium:269,potassium:733,magnesium:270,zinc:3.1,vitC:0,vitD:0,vitA:0,vitB12:0,folate:44,sodium:1}},
+  {id:"ghee",name:"Ghee",category:"fat",perUnit:{label:"1 tbsp (14g)",grams:14},unit:{type:"serving",label:"tbsp",gramsEach:14},
+   macros:{kcal:900,protein:0,carb:0,fat:100,fiber:0},
+   carbProfile:{sugars:0,starch:0,addedSugar:0},
+   fatProfile:{sat:62,mono:29,poly:4,omega3:0.5,omega6:2.2},
+   fiberProfile:{soluble:0,insoluble:0},
+   amino:null,
+   micros:{iron:0,calcium:0,potassium:0,magnesium:0,zinc:0,vitC:0,vitD:0,vitA:840,vitB12:0,folate:0,sodium:0}},
+];
+
+// ---- helpers ----
+const r0=n=>Math.round(n);
+const r1=n=>Math.round(n*10)/10;
+const AA_LABEL={histidine:"Histidine",isoleucine:"Isoleucine",leucine:"Leucine",lysine:"Lysine",methionine:"Methionine",phenylalanine:"Phenylalanine",threonine:"Threonine",tryptophan:"Tryptophan",valine:"Valine",alanine:"Alanine",arginine:"Arginine",aspartate:"Aspartate",cystine:"Cystine",glutamate:"Glutamate",glycine:"Glycine",proline:"Proline",serine:"Serine",tyrosine:"Tyrosine"};
+
+// scale a per-100g value to the eaten grams
+const scale=(v,grams)=> v==null?null : v*grams/100;
+const FOOD_BY_ID=id=>FOODS.find(f=>f.id===id);
+// returns the nutrition profile for a log entry, respecting the chosen variant
+const getProfile=e=>{
+  if(e.variantId&&e.food.variants){
+    const v=e.food.variants.find(v=>v.id===e.variantId);
+    if(v) return v;
+  }
+  return e.food;
+};
+
+// ---- USDA FoodData Central ----
+const USDA_CACHE_KEY="nutrition-usda-foods";
+
+function usdaCacheGet(id){
+  try{
+    const raw=localStorage.getItem(USDA_CACHE_KEY);
+    if(!raw) return null;
+    return JSON.parse(raw)[id]??null;
+  }catch{return null;}
+}
+function usdaCachePut(food){
+  try{
+    const raw=localStorage.getItem(USDA_CACHE_KEY);
+    const cache=raw?JSON.parse(raw):{};
+    cache[food.id]=food;
+    localStorage.setItem(USDA_CACHE_KEY,JSON.stringify(cache));
+  }catch{}
+}
+
+// USDA amino acid nutrient IDs → app keys (USDA reports g/100g; app stores mg/100g)
+const USDA_AMINO_IDS={
+  histidine:1221,isoleucine:1212,leucine:1213,lysine:1214,methionine:1215,
+  phenylalanine:1217,threonine:1211,tryptophan:1210,valine:1219,
+  alanine:1222,arginine:1220,aspartate:1223,cystine:1216,
+  glutamate:1224,glycine:1225,proline:1226,serine:1227,tyrosine:1218,
+};
+
+function mapUsdaFood(d){
+  const nu=d.foodNutrients||[];
+  const get=id=>{const n=nu.find(n=>n.nutrient&&n.nutrient.id===id); return n?.amount??null;};
+
+  const aminoMap={};
+  let anyAmino=false;
+  for(const [key,id] of Object.entries(USDA_AMINO_IDS)){
+    const v=get(id);
+    aminoMap[key]=v!=null?Math.round(v*1000):null;  // g/100g → mg/100g
+    if(v!=null) anyAmino=true;
+  }
+
+  return {
+    id:`usda_${d.fdcId}`,
+    name:d.description,
+    category:"usda",
+    perUnit:{label:"100g",grams:100},
+    unit:{type:"gram"},
+    macros:{
+      kcal:get(1008)??0, protein:get(1003)??0,
+      carb:get(1005)??0, fat:get(1004)??0, fiber:get(1079)??0,
+    },
+    carbProfile:{sugars:get(2000)??get(1063), starch:get(1009), addedSugar:get(1235)},
+    fatProfile:{sat:get(1258), mono:get(1292), poly:get(1293), omega3:null, omega6:null},
+    fiberProfile:{soluble:get(1082), insoluble:get(1084)},
+    amino:anyAmino?aminoMap:null,
+    micros:{
+      iron:get(1089)??0, calcium:get(1087)??0, potassium:get(1092)??0,
+      magnesium:get(1090)??0, zinc:get(1095)??0, vitC:get(1162)??0,
+      vitD:get(1114)??0, vitA:get(1106)??0, vitB12:get(1178)??0,
+      folate:get(1177)??0, sodium:get(1093)??0,
+    },
+    variants:null,
+  };
+}
+
+const TODAY=new Date().toISOString().slice(0,10);
+const STORAGE_KEY="nutrition-log";
+
+function loadTodayLog(){
+  try{
+    const raw=localStorage.getItem(STORAGE_KEY);
+    if(!raw) return [];
+    const all=JSON.parse(raw);
+    let uid=1;
+    return (all[TODAY]||[]).map(e=>{
+      const food=FOOD_BY_ID(e.foodId)??usdaCacheGet(e.foodId);
+      return food?{uid:uid++,food,grams:e.grams,variantId:e.variantId??null}:null;
+    }).filter(Boolean);
+  }catch{return [];}
+}
+
+function saveTodayLog(log){
+  try{
+    const raw=localStorage.getItem(STORAGE_KEY);
+    const all=raw?JSON.parse(raw):{};
+    all[TODAY]=log.map(e=>({foodId:e.food.id,grams:e.grams,variantId:e.variantId??null}));
+    localStorage.setItem(STORAGE_KEY,JSON.stringify(all));
+  }catch{}
+}
+
+function parseQty(text){
+  // "200g chicken breast" / "2 eggs" / "1 scoop whey" / "chicken breast"
+  const t=text.trim().toLowerCase();
+  let m=t.match(/^(\d+(?:\.\d+)?)\s*(g|gram|grams)\b\s*(.*)$/);
+  if(m) return {grams:parseFloat(m[1]),rest:m[3]};
+  m=t.match(/^(\d+(?:\.\d+)?)\s*(scoop|scoops|tbsp|cup|cups|oz|piece|pieces|medium|large)?\s+(.*)$/);
+  if(m) return {units:parseFloat(m[1]),rest:m[3]};
+  return {rest:t};
+}
+function findFood(rest){
+  if(!rest) return null;
+  let best=null,bestScore=0;
+  for(const f of FOODS){
+    const hay=(f.name+" "+(f.brand||"")).toLowerCase();
+    const words=rest.split(/\s+/).filter(Boolean);
+    let hits=0; for(const w of words){ if(hay.includes(w)) hits++; }
+    const score=hits/Math.max(words.length,1);
+    if(score>bestScore){bestScore=score;best=f;}
+  }
+  return bestScore>=0.5?best:null;
+}
+
+function App(){
+  const [log,setLog]=useState(loadTodayLog);
+  const [text,setText]=useState("");
+  const [open,setOpen]=useState(null);
+  const [err,setErr]=useState("");
+  const [expandAA,setExpandAA]=useState(false);
+
+  useEffect(()=>{saveTodayLog(log);},[log]);
+
+  const totals=useMemo(()=>{
+    const t={kcal:0,protein:0,carb:0,fat:0,fiber:0};
+    const micro={}; Object.keys(MICRO_META).forEach(k=>micro[k]=0);
+    for(const e of log){
+      const p=getProfile(e);
+      for(const k in t) t[k]+=scale(p.macros[k],e.grams)||0;
+      for(const k in micro) micro[k]+=scale(p.micros[k],e.grams)||0;
+    }
+    return {...t,micro};
+  },[log]);
+
+  const [pending,setPending]=useState(null);
+  const [usdaSearch,setUsdaSearch]=useState({status:'idle',term:'',results:[],error:null});
+  const clearUsda=()=>setUsdaSearch({status:'idle',term:'',results:[],error:null});
+
+  function openConfigure(foodText){
+    setErr("");
+    const {grams,units,rest}=parseQty(foodText);
+    const f=findFood(rest);
+    if(f){
+      clearUsda();
+      const isGram=!f.unit||f.unit.type==="gram";
+      const defaultAmt=isGram
+        ? (grams!=null?grams:f.perUnit.grams)
+        : (units!=null?units:1);
+      setPending({food:f,variantId:f.variants?f.variants[0].id:null,amount:String(defaultAmt)});
+      setText("");
+      return;
+    }
+    if(!foodText.trim()){ setErr("Type a food to log."); return; }
+    if(!USDA_API_KEY){
+      setErr(`No local match for "${foodText.trim()}". Add a USDA API key to config.js to search the full food database.`);
+      return;
+    }
+    setUsdaSearch({status:'prompt',term:foodText.trim(),results:[],error:null});
+  }
+  function add(){ openConfigure(text); }
+
+  async function searchUsda(){
+    if(!USDA_API_KEY) return;
+    const term=usdaSearch.term;
+    setUsdaSearch(s=>({...s,status:'loading',error:null}));
+    try{
+      const url=`https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(term)}&api_key=${USDA_API_KEY}&pageSize=8&dataType=Foundation,SR%20Legacy`;
+      const res=await fetch(url);
+      if(!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data=await res.json();
+      setUsdaSearch(s=>({...s,status:'results',results:data.foods||[]}));
+    }catch(e){
+      setUsdaSearch(s=>({...s,status:'results',results:[],error:`USDA search failed: ${e.message}`}));
+    }
+  }
+
+  async function pickUsda(result){
+    if(!USDA_API_KEY) return;
+    setUsdaSearch(s=>({...s,status:'fetching'}));
+    try{
+      const url=`https://api.nal.usda.gov/fdc/v1/food/${result.fdcId}?api_key=${USDA_API_KEY}`;
+      const res=await fetch(url);
+      if(!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data=await res.json();
+      const food=mapUsdaFood(data);
+      usdaCachePut(food);
+      clearUsda();
+      setPending({food,variantId:null,amount:"100"});
+    }catch(e){
+      setUsdaSearch(s=>({...s,status:'results',error:`Failed to load food details: ${e.message}`}));
+    }
+  }
+
+  const del=uid=>setLog(log.filter(e=>e.uid!==uid));
+
+  const macroDefs=[
+    {key:"protein",label:"Protein",unit:"g",color:"var(--green)"},
+    {key:"carb",label:"Carbs",unit:"g",color:"var(--blue)"},
+    {key:"fat",label:"Fat",unit:"g",color:"var(--amber2)"},
+    {key:"fiber",label:"Fiber",unit:"g",color:"var(--gray)"},
+  ];
+
+  return (
+    <div className="wrap">
+      {/* header */}
+      <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:4}}>
+        <h1>Today</h1>
+        <span className="mono lbl2">{new Date().toLocaleDateString(undefined,{weekday:"short",day:"numeric",month:"short"})}</span>
+      </div>
+      <div className="lbl" style={{marginBottom:22}}>
+        <span className="mono" style={{color:"var(--txt)",fontWeight:500}}>{r0(totals.kcal)}</span> of {TARGETS.kcal} kcal
+        <span style={{color:"var(--txt3)"}}> · {r0(Math.max(TARGETS.kcal-totals.kcal,0))} remaining</span>
+      </div>
+
+      {/* macro cards */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
+        {macroDefs.map(m=>{
+          const val=totals[m.key], tgt=TARGETS[m.key], pct=Math.min(val/tgt*100,100);
+          return (
+            <button key={m.key} className={"macro"+(open===m.key?" open":"")}
+              onClick={()=>{setOpen(open===m.key?null:m.key);setExpandAA(false);}}>
+              <div className="lbl">{m.label}</div>
+              <div className="mono" style={{fontSize:21,fontWeight:500,marginTop:5}}>
+                {r0(val)}<span className="lbl2">/{tgt}{m.unit}</span>
+              </div>
+              <div className="bar"><div style={{width:pct+"%",background:m.color}}/></div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* drill-down panel */}
+      {open && <DrillDown mkey={open} log={log} totals={totals}
+        expandAA={expandAA} setExpandAA={setExpandAA}/>}
+
+      {/* micronutrients */}
+      <div style={{display:"flex",alignItems:"center",gap:8,margin:"22px 0 10px"}}>
+        <span style={{fontSize:13,fontWeight:500,color:"var(--txt2)"}}>Micronutrients</span>
+        <span className="lbl2">— the part other apps hide</span>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(104px,1fr))",gap:8,marginBottom:24}}>
+        {Object.entries(MICRO_META).map(([k,meta])=>{
+          const val=totals.micro[k], pct=val/meta.rda*100;
+          const low=pct<70, status=low?"low":"good";
+          return (
+            <div key={k} className="chip">
+              <div className="lbl">{meta.label}</div>
+              <div className="mono" style={{fontSize:15,fontWeight:500,marginTop:2}}>
+                {val>=100?r0(val):r1(val)}<span className="lbl2">/{meta.rda}{meta.unit}</span>
+              </div>
+              <div style={{fontSize:11,marginTop:2}} className={low?"statusLow":"statusGood"}>{status}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* add food */}
+      <div style={{display:"flex",gap:8,marginBottom:6}}>
+        <input value={text} placeholder="Add food — e.g. 200g chicken breast, 2 eggs, 1 scoop whey"
+          onChange={e=>{setText(e.target.value);clearUsda();}} onKeyDown={e=>e.key==="Enter"&&add()}/>
+        <button onClick={add}>Log</button>
+      </div>
+      {err && <div style={{fontSize:12.5,color:"#e88",marginBottom:8}}>{err}</div>}
+      {usdaSearch.status!=='idle' && <UsdaSearch search={usdaSearch} onSearch={searchUsda} onPick={pickUsda}/>}
+      <div className="sug">
+        {["200g chicken breast","2 eggs","1 scoop whey","1 cup rice","1 banana","1 tbsp ghee","1 oz almonds"].map(s=>
+          <button key={s} onClick={()=>openConfigure(s)}>{s}</button>
+        )}
+      </div>
+
+      {pending && <ConfigurePanel pending={pending} setPending={setPending}
+        onConfirm={(food,variantId,grams)=>{
+          setLog([...log,{uid:Date.now(),food,grams,variantId}]);
+          setPending(null);
+        }}/>}
+
+      {/* log */}
+      <div className="card" style={{marginTop:14,overflow:"hidden"}}>
+        {log.length===0 && <div style={{padding:"20px 16px",color:"var(--txt3)",fontSize:13.5}}>No food logged yet. Add your first item above.</div>}
+        {log.map(e=>(
+          <div key={e.uid} className="logrow">
+            <div>
+              <span style={{fontWeight:500}}>{e.food.name}</span>
+              {e.food.brand && <span className="lbl2"> · {e.food.brand}</span>}
+              {e.variantId&&e.food.variants&&<span className="lbl2"> · {e.food.variants.find(v=>v.id===e.variantId)?.label}</span>}
+              <span className="lbl2"> · {r0(e.grams)}g</span>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:14}}>
+              <span className="mono" style={{fontSize:13}}>
+                {r0(scale(getProfile(e).macros.kcal,e.grams))} kcal
+                <span style={{color:"var(--green)"}}> · {r0(scale(getProfile(e).macros.protein,e.grams))}g P</span>
+              </span>
+              <button className="del" onClick={()=>del(e.uid)} aria-label="Remove">×</button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{textAlign:"center",marginTop:20,fontSize:11.5,color:"var(--txt3)",lineHeight:1.6}}>
+        Tracking only — not medical or dietary advice.<br/>
+        Values from USDA FoodData Central. "Not reported" means USDA has no value for that food.
+      </div>
+    </div>
+  );
+}
+
+function DrillDown({mkey,log,totals,expandAA,setExpandAA}){
+  // sources: foods that contributed this macro today, ranked
+  const sources=log.map(e=>({
+    name:e.food.name, brand:e.food.brand,
+    variantLabel:e.variantId&&e.food.variants?e.food.variants.find(v=>v.id===e.variantId)?.label:null,
+    amt: scale(getProfile(e).macros[mkey],e.grams)||0
+  })).filter(s=>s.amt>0.05).sort((a,b)=>b.amt-a.amt);
+
+  return (
+    <div className="card fadein" style={{padding:"16px 18px"}}>
+      {/* sources — common to all macros */}
+      <div style={{fontSize:13,fontWeight:500,marginBottom:8}}>Your sources today</div>
+      {sources.length===0 && <div className="lbl2" style={{paddingBottom:8}}>Nothing logged contributes {mkey} yet.</div>}
+      {sources.map((s,i)=>(
+        <div key={i} className="src">
+          <span>{s.name}{s.brand&&<span className="lbl2"> · {s.brand}</span>}{s.variantLabel&&<span className="lbl2"> · {s.variantLabel}</span>}</span>
+          <span className="mono" style={{color:"var(--txt2)"}}>{r1(s.amt)} g</span>
+        </div>
+      ))}
+
+      {/* macro-specific profile */}
+      <div style={{fontSize:13,fontWeight:500,margin:"18px 0 10px"}}>
+        {mkey==="protein"&&"Amino acid profile"}
+        {mkey==="carb"&&"Carbohydrate profile"}
+        {mkey==="fat"&&"Fatty acid profile"}
+        {mkey==="fiber"&&"Fiber profile"}
+      </div>
+
+      {mkey==="protein" && <AminoProfile log={log} expand={expandAA} setExpand={setExpandAA}/>}
+      {mkey==="carb" && <SubProfile log={log} field="carbProfile"
+        rows={[["sugars","Sugars"],["starch","Starch"],["addedSugar","Added sugar"]]}/>}
+      {mkey==="fat" && <SubProfile log={log} field="fatProfile"
+        rows={[["sat","Saturated"],["mono","Monounsaturated"],["poly","Polyunsaturated"],["omega3","Omega-3"],["omega6","Omega-6"]]}/>}
+      {mkey==="fiber" && <SubProfile log={log} field="fiberProfile"
+        rows={[["soluble","Soluble"],["insoluble","Insoluble"]]}/>}
+    </div>
+  );
+}
+
+// sums a sub-profile field across the log, tracking "not reported" coverage
+function sumField(log,field,key){
+  let sum=0, reported=0, total=0;
+  for(const e of log){
+    const p=getProfile(e)[field];
+    if(!p) {total++; continue;}
+    total++;
+    if(p[key]==null) continue;
+    reported++;
+    sum+=scale(p[key],e.grams)||0;
+  }
+  return {sum,reported,total};
+}
+
+function SubProfile({log,field,rows}){
+  return (
+    <div>
+      {rows.map(([key,label])=>{
+        const {sum,reported,total}=sumField(log,field,key);
+        const none=reported===0;
+        return (
+          <div key={key} className="aarow">
+            <span style={{minWidth:140,fontSize:13.5}}>{label}</span>
+            <span className="mono" style={{fontSize:13.5,minWidth:64,textAlign:"right",color:none?"var(--txt3)":"var(--txt)"}}>
+              {none? "—" : r1(sum)+" g"}
+            </span>
+            <span className="lbl2" style={{flex:1,textAlign:"right"}}>
+              {none? "not reported" : reported<total? reported+"/"+total+" foods reported" : ""}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function AminoProfile({log,expand,setExpand}){
+  // sum each amino across the log
+  const sums={}; const reported={};
+  [...ESSENTIAL_AA,...NONESSENTIAL_AA].forEach(a=>{sums[a]=0;reported[a]=false;});
+  for(const e of log){
+    const profile=getProfile(e);
+    if(!profile.amino) continue;
+    for(const a in sums){
+      const v=profile.amino[a];
+      if(v!=null){ sums[a]+=scale(v,e.grams)||0; reported[a]=true; }
+    }
+  }
+  const maxEss=Math.max(...ESSENTIAL_AA.map(a=>sums[a]),1);
+  const list = expand? [...ESSENTIAL_AA,...NONESSENTIAL_AA] : ESSENTIAL_AA;
+
+  return (
+    <div>
+      {!expand && <div className="lbl2" style={{marginBottom:8}}>9 essential amino acids · leucine drives muscle protein synthesis</div>}
+      {list.map(a=>{
+        const isLeucine=a==="leucine";
+        const isEss=ESSENTIAL_AA.includes(a);
+        const val=sums[a], grams=val/1000;
+        return (
+          <div key={a} className="aarow" style={isLeucine?{background:"rgba(29,158,117,.06)",borderRadius:6,padding:"7px 8px",margin:"0 -8px"}:{}}>
+            <span style={{minWidth:130,fontSize:13.5,fontWeight:isLeucine?500:400,
+              color:isEss?"var(--txt)":"var(--txt2)"}}>
+              {AA_LABEL[a]}{isLeucine && <span style={{color:"var(--green)",fontSize:11,marginLeft:6}}>MPS</span>}
+            </span>
+            <div className="aabar"><div style={{width:Math.min(val/maxEss*100,100)+"%",
+              background:isLeucine?"var(--green)":"var(--greenT)"}}/></div>
+            <span className="mono" style={{fontSize:13,minWidth:62,textAlign:"right",
+              color:reported[a]?"var(--txt2)":"var(--txt3)"}}>
+              {reported[a]? (grams>=1? r1(grams)+" g": r0(val)+" mg") : "—"}
+            </span>
+          </div>
+        );
+      })}
+      <button className="ghost" style={{marginTop:12,height:34,fontSize:12.5}}
+        onClick={()=>setExpand(!expand)}>
+        {expand? "Show essential only" : "Show all 18 amino acids"}
+      </button>
+    </div>
+  );
+}
+
+function UsdaSearch({search,onSearch,onPick}){
+  const {status,term,results,error}=search;
+  const busy=status==='loading'||status==='fetching';
+  return (
+    <div style={{marginBottom:8}}>
+      {(status==='prompt'||status==='loading')&&(
+        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4}} className="fadein">
+          <button className="ghost" style={{height:34,padding:"0 14px",fontSize:12.5}}
+            onClick={onSearch} disabled={busy}>
+            {status==='loading'?"Searching USDA…":`Search USDA for "${term}"`}
+          </button>
+          {status==='loading'&&<span className="lbl2">querying food database…</span>}
+        </div>
+      )}
+      {(status==='results'||status==='fetching')&&(
+        <div className="fadein">
+          {results.length===0&&!error&&(
+            <div className="lbl2" style={{padding:"4px 0"}}>No USDA results for "{term}".</div>
+          )}
+          {results.length>0&&(
+            <div className="card" style={{overflow:'hidden',marginBottom:6}}>
+              <div style={{padding:'7px 14px 4px',fontSize:11.5,color:'var(--txt3)'}}>
+                USDA results · click to configure &amp; log
+              </div>
+              {results.map(r=>(
+                <div key={r.fdcId} className="logrow"
+                  style={{cursor:busy?'default':'pointer',opacity:busy?0.55:1,padding:"9px 14px"}}
+                  onClick={()=>!busy&&onPick(r)}>
+                  <div>
+                    <span style={{fontSize:13}}>{r.description}</span>
+                    <span className="lbl2"> · {r.dataType}</span>
+                  </div>
+                  <span className="lbl2" style={{fontSize:11,whiteSpace:'nowrap'}}>
+                    {busy?"loading…":"per 100 g"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {error&&<div style={{fontSize:12.5,color:"#e88",marginTop:4}}>{error}</div>}
+    </div>
+  );
+}
+
+function ConfigurePanel({pending,setPending,onConfirm}){
+  const {food,variantId,amount}=pending;
+  const isGram=!food.unit||food.unit.type==="gram";
+  const count=Math.max(1,parseInt(amount,10)||1);
+
+  function handleAdd(){
+    const n=isGram?parseFloat(amount):count;
+    if(!n||n<=0) return;
+    const grams=isGram?n:n*food.unit.gramsEach;
+    onConfirm(food,variantId,grams);
+  }
+
+  return (
+    <div className="card fadein" style={{padding:"14px 16px",marginTop:10,marginBottom:4}}>
+      <div style={{fontSize:13,fontWeight:500,marginBottom:10}}>
+        {food.name}{food.brand&&<span className="lbl2"> · {food.brand}</span>}
+      </div>
+
+      {food.variants&&(
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
+          {food.variants.map(v=>(
+            <button key={v.id}
+              className={variantId===v.id?"":"ghost"}
+              style={{height:32,padding:"0 12px",fontSize:12.5,fontWeight:variantId===v.id?500:400}}
+              onClick={()=>setPending({...pending,variantId:v.id})}>
+              {v.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+        {isGram?(
+          <>
+            <input type="number" min="1" step="any" value={amount} style={{width:88}}
+              onChange={e=>setPending({...pending,amount:e.target.value})}
+              onKeyDown={e=>e.key==="Enter"&&handleAdd()}/>
+            <span className="lbl">g</span>
+          </>
+        ):(
+          <>
+            <button className="ghost" style={{width:36,padding:0,fontSize:20,height:36}}
+              onClick={()=>setPending({...pending,amount:String(Math.max(1,count-1))})}>−</button>
+            <span className="mono" style={{minWidth:26,textAlign:"center",fontSize:17,fontWeight:500}}>{count}</span>
+            <button className="ghost" style={{width:36,padding:0,fontSize:20,height:36}}
+              onClick={()=>setPending({...pending,amount:String(count+1)})}>+</button>
+            <span className="lbl">{food.unit.label}{count!==1?"s":""}</span>
+          </>
+        )}
+      </div>
+
+      <div style={{display:"flex",gap:8}}>
+        <button style={{height:36,padding:"0 18px",fontSize:13}} onClick={handleAdd}>Add to log</button>
+        <button className="ghost" style={{height:36,padding:"0 14px",fontSize:13}} onClick={()=>setPending(null)}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
