@@ -388,8 +388,11 @@ function App(){
   const [open,setOpen]=useState(null);
   const [err,setErr]=useState("");
   const [expandAA,setExpandAA]=useState(false);
+  const [planExplain,setPlanExplain]=useState({status:'idle',text:'',error:''});
 
   useEffect(()=>{saveTodayLog(log);},[log]);
+  // Reset explanation whenever the profile changes so stale text doesn't linger
+  useEffect(()=>{setPlanExplain({status:'idle',text:'',error:''});},[profile]);
 
   const targets=useMemo(()=>{
     if(!profile) return {kcal:2000,protein:200,carb:180,fat:60,fiber:30,_meta:null};
@@ -473,6 +476,35 @@ function App(){
 
   const del=uid=>setLog(log.filter(e=>e.uid!==uid));
 
+  async function fetchPlanExplanation(){
+    if(!targets._meta) return;
+    setPlanExplain({status:'loading',text:'',error:''});
+    try{
+      const res=await fetch('http://localhost:8000/explain-plan',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          age:profile.age, sex:profile.sex,
+          height:profile.heightCm, weight:profile.weightKg,
+          target_weight:profile.targetWeightKg||null,
+          activity_level:profile.activityLevel, goal:profile.goal,
+          bmr:targets._meta.bmr, tdee:targets._meta.tdee,
+          calorie_target:targets.kcal,
+          protein_g:targets.protein, carb_g:targets.carb, fat_g:targets.fat,
+        }),
+      });
+      const data=await res.json();
+      if(!res.ok){
+        setPlanExplain({status:'error',text:'',error:data.detail||`Error ${res.status}`});
+        return;
+      }
+      setPlanExplain({status:'done',text:data.explanation,error:''});
+    }catch(e){
+      setPlanExplain({status:'error',text:'',
+        error:"Couldn't reach the AI service — make sure the backend server is running."});
+    }
+  }
+
   if(!profile||showProfile) return (
     <Onboarding
       initial={profile}
@@ -502,13 +534,20 @@ function App(){
         <span className="mono" style={{color:"var(--txt)",fontWeight:500}}>{r0(totals.kcal)}</span> of {targets.kcal} kcal
         <span style={{color:"var(--txt3)"}}> · {r0(Math.max(targets.kcal-totals.kcal,0))} remaining</span>
       </div>
-      {targets._meta&&<div className="lbl2" style={{marginBottom:18}}>
-        {targets._manual&&<span style={{color:"var(--amber2)",marginRight:4}}>Custom targets ·</span>}
-        Mifflin-St Jeor BMR {targets._meta.bmr.toLocaleString()} · TDEE {targets._meta.tdee.toLocaleString()} · {
-          targets._meta.goal==="recomp"?"recomp at maintenance":
-          targets._meta.goal==="fat_loss"?`fat loss −${targets._meta.deficitPct}%`:
-          `muscle gain +${targets._meta.surplusPct}%`
-        }
+      {targets._meta&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18,gap:10}}>
+        <div className="lbl2">
+          {targets._manual&&<span style={{color:"var(--amber2)",marginRight:4}}>Custom targets ·</span>}
+          Mifflin-St Jeor BMR {targets._meta.bmr.toLocaleString()} · TDEE {targets._meta.tdee.toLocaleString()} · {
+            targets._meta.goal==="recomp"?"recomp at maintenance":
+            targets._meta.goal==="fat_loss"?`fat loss −${targets._meta.deficitPct}%`:
+            `muscle gain +${targets._meta.surplusPct}%`
+          }
+        </div>
+        <button className="ghost" style={{flexShrink:0,height:26,padding:"0 10px",fontSize:11.5,borderRadius:6}}
+          disabled={planExplain.status==='loading'}
+          onClick={fetchPlanExplanation}>
+          {planExplain.status==='loading'?"Thinking…":"Explain my plan"}
+        </button>
       </div>}
 
       {/* macro cards */}
@@ -531,6 +570,30 @@ function App(){
       {/* drill-down panel */}
       {open && <DrillDown mkey={open} log={log} totals={totals}
         expandAA={expandAA} setExpandAA={setExpandAA}/>}
+
+      {/* AI plan explanation */}
+      {planExplain.status==='error'&&(
+        <div style={{margin:"14px 0",padding:"12px 14px",borderRadius:8,
+          background:"rgba(220,80,60,.07)",border:"0.5px solid #b44",fontSize:13,color:"#e99"}}>
+          {planExplain.error}
+        </div>
+      )}
+      {planExplain.status==='done'&&(
+        <div style={{margin:"14px 0",padding:"16px",borderRadius:10,
+          background:"var(--surface2)",border:"0.5px solid var(--line)"}}>
+          <div style={{fontSize:12,fontWeight:600,color:"var(--txt2)",letterSpacing:.4,marginBottom:10,textTransform:"uppercase"}}>
+            Your plan · AI explanation
+          </div>
+          {planExplain.text.split(/\n\n+/).map((para,i)=>(
+            <p key={i} style={{margin:"0 0 10px",fontSize:13.5,lineHeight:1.65,color:"var(--txt)"}}>
+              {para.trim()}
+            </p>
+          ))}
+          <div style={{marginTop:4,fontSize:11,color:"var(--txt3)",borderTop:"0.5px solid var(--line)",paddingTop:8}}>
+            AI-generated guidance based on your targets. Not medical advice.
+          </div>
+        </div>
+      )}
 
       {/* micronutrients */}
       <div style={{display:"flex",alignItems:"center",gap:8,margin:"22px 0 10px"}}>
