@@ -41,9 +41,15 @@ The **nutrition foundation is built and working** — the first and most data-in
 - **Honest data** — where the source doesn't report a value, the app shows **"not reported"** rather than fabricating one.
 - **Per-day persistence** — the daily log is saved by date and survives reloads (the data model the longitudinal features will build on).
 
-## Screenshot
+## Screenshots
+
+**Dashboard — personalized science-based targets, macros, and the micronutrients most apps don't show:**
 
 ![VitalGraph dashboard](docs/screenshot.png)
+
+**Macro drill-down — every macro opens into its profile; protein shows the full amino-acid breakdown with leucine (the driver of muscle protein synthesis) highlighted:**
+
+![Amino acid profile](docs/amino-profile.png)
 
 ## Tech
 
