@@ -1,0 +1,77 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  /* Page & surface */
+  --bg:           #f7f8fb;
+  --surface:      #ffffff;
+  --surface2:     #f3f4f8;
+  --border:       #e8eaf0;
+  --border2:      #d1d5e0;
+
+  /* Text */
+  --txt:          #111827;
+  --txt2:         #6b7280;
+  --txt3:         #9ca3af;
+
+  /* Primary — teal */
+  --primary:          #13b88a;
+  --primary-dark:     #0f9e76;
+  --primary-soft:     #edfaf5;
+  --primary-mid:      #cdf2e7;
+  --nav-active-bg:    #e7f7f1;
+  --nav-active-text:  #0e8a68;
+
+  /* Secondary — violet */
+  --violet:       #6d5ef0;
+  --violet-dark:  #5a4dd4;
+  --violet-soft:  #f0eefe;
+  --violet-mid:   #d4cffa;
+
+  /* Functional accents */
+  --coral:        #f05c5c;
+  --coral-soft:   #fef0f0;
+  --amber:        #f59e0b;
+  --amber-soft:   #fffbeb;
+  --blue:         #3b82f6;
+  --blue-soft:    #eff6ff;
+
+  /* Layout */
+  --sidebar-w:    240px;
+  --topbar-h:     60px;
+  --radius:       14px;
+  --radius-sm:    6px;
+  --shadow-sm:    0 1px 2px rgba(0,0,0,.06);
+  --shadow:       0 1px 4px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.04);
+  --shadow-lg:    0 8px 32px rgba(0,0,0,.12);
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--txt);
+  line-height: 1.5;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button {
+  cursor: pointer;
+  font-family: inherit;
+  border: none;
+  background: none;
+}
+
+input {
+  font-family: inherit;
+  font-size: 14px;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}

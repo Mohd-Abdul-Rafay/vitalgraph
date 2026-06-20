@@ -10,3 +10,6 @@ backend/.env
 
 # Claude Code project memory
 .claude/
+
+# Vite / Node
+web/node_modules/
