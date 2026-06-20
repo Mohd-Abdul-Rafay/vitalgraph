@@ -81,7 +81,73 @@ const MICRO_META = {
 };
 const ESSENTIAL_AA=["histidine","isoleucine","leucine","lysine","methionine","phenylalanine","threonine","tryptophan","valine"];
 const NONESSENTIAL_AA=["alanine","arginine","aspartate","cystine","glutamate","glycine","proline","serine","tyrosine"];
-const TARGETS={kcal:2000,protein:200,carb:180,fat:60,fiber:30};
+// ---- User profile & science-based targets ----
+const PROFILE_KEY="nutrition-profile";
+
+const ACTIVITY=[
+  {id:"sedentary",  label:"Sedentary",        desc:"Desk job, little or no exercise",                mult:1.2},
+  {id:"light",      label:"Lightly active",   desc:"Light exercise 1–3 days/week",                  mult:1.375},
+  {id:"moderate",   label:"Moderately active",desc:"Exercise 3–5 days/week",                        mult:1.55},
+  {id:"very",       label:"Very active",      desc:"Hard exercise or sport 6–7 days/week",          mult:1.725},
+  {id:"extra",      label:"Extra active",     desc:"Twice-a-day training or physical labour job",   mult:1.9},
+];
+const GOALS=[
+  {id:"recomp",      label:"Recomposition", desc:"Eat at maintenance — build muscle and lose fat simultaneously"},
+  {id:"fat_loss",    label:"Fat loss",      desc:"Calorie deficit — lose fat while preserving muscle with high protein"},
+  {id:"muscle_gain", label:"Muscle gain",   desc:"Calorie surplus — provide extra energy for muscle growth"},
+];
+
+function loadProfile(){
+  try{
+    const raw=localStorage.getItem(PROFILE_KEY);
+    if(!raw) return null;
+    return JSON.parse(raw).default??null;
+  }catch{return null;}
+}
+function saveProfile(p){
+  try{
+    const raw=localStorage.getItem(PROFILE_KEY);
+    const store=raw?JSON.parse(raw):{};
+    store.default=p;
+    localStorage.setItem(PROFILE_KEY,JSON.stringify(store));
+  }catch{}
+}
+
+function calcBMR(p){
+  // Mifflin-St Jeor: (10×kg) + (6.25×cm) − (5×age) + sex_offset (+5 men, −161 women)
+  const base=10*p.weightKg+6.25*p.heightCm-5*p.age;
+  return Math.round(p.sex==="male"?base+5:base-161);
+}
+
+function calcTargets(p){
+  const act=ACTIVITY.find(a=>a.id===p.activityLevel)||ACTIVITY[2];
+  const bmr=calcBMR(p);
+  const tdee=Math.round(bmr*act.mult);
+  const floor=p.sex==="male"?1500:1200;
+
+  let goalKcal;
+  if(p.goal==="fat_loss"){
+    const def=Math.min(p.deficitPct??20,25);
+    goalKcal=Math.max(Math.round(tdee*(1-def/100)),floor);
+  } else if(p.goal==="muscle_gain"){
+    const sur=Math.min(p.surplusPct??10,20);
+    goalKcal=Math.round(tdee*(1+sur/100));
+  } else {
+    goalKcal=tdee;
+  }
+
+  // Macros — sports-nutrition guidelines (per current bodyweight)
+  const lbs=p.weightKg*2.2046;
+  const protein=Math.round(lbs*1.0);                               // 1 g/lb: supports muscle retention/growth
+  const fatFloor=Math.round(lbs*0.3);                              // 0.3 g/lb: essential fat minimum
+  const fat=Math.max(Math.round(goalKcal*0.25/9),fatFloor);       // 25% of calories, min floor
+  const carb=Math.max(0,Math.round((goalKcal-protein*4-fat*9)/4));// remaining calories → carbs
+  const fiber=Math.max(20,Math.round(goalKcal/1000*14));          // 14 g/1,000 kcal (DRI basis)
+
+  return {kcal:goalKcal,protein,carb,fat,fiber,
+    _meta:{bmr,tdee,act:act.label,actMult:act.mult,goal:p.goal,
+           deficitPct:p.deficitPct??20,surplusPct:p.surplusPct??10,floor}};
+}
 
 const FOODS=[
   {id:"chicken_breast",name:"Chicken breast, skinless",category:"protein",perUnit:{label:"100g",grams:100},unit:{type:"gram"},
@@ -315,6 +381,8 @@ function findFood(rest){
 }
 
 function App(){
+  const [profile,setProfile]=useState(loadProfile);
+  const [showProfile,setShowProfile]=useState(false);
   const [log,setLog]=useState(loadTodayLog);
   const [text,setText]=useState("");
   const [open,setOpen]=useState(null);
@@ -322,6 +390,10 @@ function App(){
   const [expandAA,setExpandAA]=useState(false);
 
   useEffect(()=>{saveTodayLog(log);},[log]);
+
+  const targets=useMemo(()=>
+    profile?calcTargets(profile):{kcal:2000,protein:200,carb:180,fat:60,fiber:30,_meta:null}
+  ,[profile]);
 
   const totals=useMemo(()=>{
     const t={kcal:0,protein:0,carb:0,fat:0,fiber:0};
@@ -395,6 +467,14 @@ function App(){
 
   const del=uid=>setLog(log.filter(e=>e.uid!==uid));
 
+  if(!profile||showProfile) return (
+    <Onboarding
+      initial={profile}
+      onSave={p=>{saveProfile(p);setProfile(p);setShowProfile(false);}}
+      onCancel={profile?()=>setShowProfile(false):null}
+    />
+  );
+
   const macroDefs=[
     {key:"protein",label:"Protein",unit:"g",color:"var(--green)"},
     {key:"carb",label:"Carbs",unit:"g",color:"var(--blue)"},
@@ -407,17 +487,27 @@ function App(){
       {/* header */}
       <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:4}}>
         <h1>Today</h1>
-        <span className="mono lbl2">{new Date().toLocaleDateString(undefined,{weekday:"short",day:"numeric",month:"short"})}</span>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span className="mono lbl2">{new Date().toLocaleDateString(undefined,{weekday:"short",day:"numeric",month:"short"})}</span>
+          <button className="ghost" style={{height:26,padding:"0 9px",fontSize:11.5,borderRadius:6}} onClick={()=>setShowProfile(true)}>Edit profile</button>
+        </div>
       </div>
-      <div className="lbl" style={{marginBottom:22}}>
-        <span className="mono" style={{color:"var(--txt)",fontWeight:500}}>{r0(totals.kcal)}</span> of {TARGETS.kcal} kcal
-        <span style={{color:"var(--txt3)"}}> · {r0(Math.max(TARGETS.kcal-totals.kcal,0))} remaining</span>
+      <div className="lbl" style={{marginBottom:targets._meta?5:22}}>
+        <span className="mono" style={{color:"var(--txt)",fontWeight:500}}>{r0(totals.kcal)}</span> of {targets.kcal} kcal
+        <span style={{color:"var(--txt3)"}}> · {r0(Math.max(targets.kcal-totals.kcal,0))} remaining</span>
       </div>
+      {targets._meta&&<div className="lbl2" style={{marginBottom:18}}>
+        Mifflin-St Jeor BMR {targets._meta.bmr.toLocaleString()} · TDEE {targets._meta.tdee.toLocaleString()} · {
+          targets._meta.goal==="recomp"?"recomp at maintenance":
+          targets._meta.goal==="fat_loss"?`fat loss −${targets._meta.deficitPct}%`:
+          `muscle gain +${targets._meta.surplusPct}%`
+        }
+      </div>}
 
       {/* macro cards */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
         {macroDefs.map(m=>{
-          const val=totals[m.key], tgt=TARGETS[m.key], pct=Math.min(val/tgt*100,100);
+          const val=totals[m.key], tgt=targets[m.key], pct=Math.min(val/tgt*100,100);
           return (
             <button key={m.key} className={"macro"+(open===m.key?" open":"")}
               onClick={()=>{setOpen(open===m.key?null:m.key);setExpandAA(false);}}>
@@ -622,6 +712,292 @@ function AminoProfile({log,expand,setExpand}){
         onClick={()=>setExpand(!expand)}>
         {expand? "Show essential only" : "Show all 18 amino acids"}
       </button>
+    </div>
+  );
+}
+
+function Onboarding({initial,onSave,onCancel}){
+  const initForm=()=>initial?{
+    age:String(initial.age),sex:initial.sex,
+    heightCm:String(initial.heightCm),heightUnit:"cm",
+    heightFt:String(Math.floor(initial.heightCm/30.48)),
+    heightIn:String(Math.round((initial.heightCm%30.48)/2.54)),
+    weightKg:String(initial.weightKg),weightUnit:"kg",
+    weightLbs:String(Math.round(initial.weightKg*2.2046*10)/10),
+    targetWeightKg:String(initial.targetWeightKg||""),
+    targetWeightLbs:String(initial.targetWeightKg?Math.round(initial.targetWeightKg*2.2046*10)/10:""),
+    activityLevel:initial.activityLevel,
+    goal:initial.goal,deficitPct:initial.deficitPct??20,surplusPct:initial.surplusPct??10,
+  }:{
+    age:"",sex:"male",heightCm:"",heightUnit:"cm",heightFt:"",heightIn:"",
+    weightKg:"",weightUnit:"kg",weightLbs:"",targetWeightKg:"",targetWeightLbs:"",
+    activityLevel:"moderate",goal:"recomp",deficitPct:20,surplusPct:10,
+  };
+
+  const [form,setForm]=useState(initForm);
+  const [step,setStep]=useState(0);
+  const [errs,setErrs]=useState({});
+  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+
+  // Canonical metric values derived from whichever unit is currently selected
+  const mH=form.heightUnit==="cm"
+    ?parseFloat(form.heightCm)||0
+    :Math.round(parseFloat(form.heightFt||0)*30.48+parseFloat(form.heightIn||0)*2.54);
+  const mW=form.weightUnit==="kg"
+    ?parseFloat(form.weightKg)||0
+    :Math.round(parseFloat(form.weightLbs||0)/2.2046*10)/10;
+  const mT=form.weightUnit==="kg"
+    ?parseFloat(form.targetWeightKg)||0
+    :Math.round(parseFloat(form.targetWeightLbs||0)/2.2046*10)/10;
+
+  function toggleH(){
+    const u=form.heightUnit==="cm"?"imperial":"cm";
+    if(u==="imperial"&&mH) setForm(f=>({...f,heightUnit:"imperial",heightFt:String(Math.floor(mH/30.48)),heightIn:String(Math.round((mH%30.48)/2.54))}));
+    else if(u==="cm"&&mH) setForm(f=>({...f,heightUnit:"cm",heightCm:String(mH)}));
+    else set("heightUnit",u);
+  }
+  function toggleW(){
+    const u=form.weightUnit==="kg"?"lbs":"kg";
+    if(u==="lbs"&&mW) setForm(f=>({...f,weightUnit:"lbs",weightLbs:String(Math.round(mW*2.2046*10)/10),targetWeightLbs:String(mT?Math.round(mT*2.2046*10)/10:"")}));
+    else if(u==="kg"&&mW) setForm(f=>({...f,weightUnit:"kg",weightKg:String(mW),targetWeightKg:String(mT||"")}));
+    else set("weightUnit",u);
+  }
+
+  function validate(){
+    const e={};
+    if(!form.age||+form.age<13||+form.age>99) e.age="Enter age 13–99";
+    if(mH<100||mH>250) e.height="Enter a valid height (100–250 cm)";
+    if(mW<30||mW>300) e.weight="Enter a valid weight";
+    if(mT<30||mT>300) e.targetWeight="Enter a valid target weight";
+    setErrs(e);
+    return !Object.keys(e).length;
+  }
+
+  // Live targets preview (recalculates on every form change in step 1)
+  const preview=(mH&&mW&&+form.age)?calcTargets({
+    age:+form.age,sex:form.sex,heightCm:mH,weightKg:mW,targetWeightKg:mT,
+    activityLevel:form.activityLevel,goal:form.goal,
+    deficitPct:Math.min(Math.max(+form.deficitPct||20,5),25),
+    surplusPct:Math.min(Math.max(+form.surplusPct||10,5),20),
+  }):null;
+
+  // Small helpers for consistent field + segmented-button layout
+  const fld=(label,err,el)=>(
+    <div style={{marginBottom:18}}>
+      <div className="lbl" style={{marginBottom:7}}>{label}</div>
+      {el}
+      {err&&<div style={{fontSize:11.5,color:"#e88",marginTop:4}}>{err}</div>}
+    </div>
+  );
+  const seg=(val,opts,fn)=>(
+    <div style={{display:"flex",gap:6}}>
+      {opts.map(o=>(
+        <button key={o.v} className={val===o.v?"":"ghost"}
+          style={{height:34,padding:"0 18px",fontSize:13,fontWeight:val===o.v?500:400}}
+          onClick={()=>fn(o.v)}>{o.l}
+        </button>
+      ))}
+    </div>
+  );
+
+  // ── Step 0: body metrics ──────────────────────────────────────────────────
+  if(step===0) return (
+    <div className="wrap" style={{paddingTop:44}}>
+      <div style={{marginBottom:26}}>
+        <h1 style={{marginBottom:4}}>Set up your profile</h1>
+        <div className="lbl2">Your stats are used to calculate a personalised calorie and macro target.</div>
+      </div>
+      <div className="card" style={{padding:"20px 20px 6px",marginBottom:14}}>
+
+        {fld("Age",errs.age,
+          <input type="number" min="13" max="99" placeholder="e.g. 28"
+            value={form.age} style={{width:96}} onChange={e=>set("age",e.target.value)}/>
+        )}
+
+        {fld("Sex",null,
+          seg(form.sex,[{v:"male",l:"Male"},{v:"female",l:"Female"}],v=>set("sex",v))
+        )}
+
+        {fld("Height",errs.height,
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            {form.heightUnit==="cm"
+              ?<input type="number" placeholder="e.g. 178" value={form.heightCm}
+                  style={{width:88}} onChange={e=>set("heightCm",e.target.value)}/>
+              :<>
+                <input type="number" placeholder="ft" value={form.heightFt}
+                  style={{width:54}} onChange={e=>set("heightFt",e.target.value)}/>
+                <span className="lbl2">ft</span>
+                <input type="number" placeholder="in" value={form.heightIn}
+                  style={{width:54}} onChange={e=>set("heightIn",e.target.value)}/>
+                <span className="lbl2">in</span>
+              </>
+            }
+            <button className="ghost" style={{height:30,padding:"0 10px",fontSize:11.5}}
+              onClick={toggleH}>{form.heightUnit==="cm"?"↔ ft / in":"↔ cm"}</button>
+          </div>
+        )}
+
+        {fld("Current weight",errs.weight,
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            {form.weightUnit==="kg"
+              ?<input type="number" placeholder="e.g. 80" value={form.weightKg}
+                  style={{width:88}} onChange={e=>set("weightKg",e.target.value)}/>
+              :<input type="number" placeholder="e.g. 176" value={form.weightLbs}
+                  style={{width:88}} onChange={e=>set("weightLbs",e.target.value)}/>
+            }
+            <span className="lbl2">{form.weightUnit}</span>
+            <button className="ghost" style={{height:30,padding:"0 10px",fontSize:11.5}}
+              onClick={toggleW}>{form.weightUnit==="kg"?"↔ lbs":"↔ kg"}</button>
+          </div>
+        )}
+
+        {fld("Target weight",errs.targetWeight,
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            {form.weightUnit==="kg"
+              ?<input type="number" placeholder="e.g. 75" value={form.targetWeightKg}
+                  style={{width:88}} onChange={e=>set("targetWeightKg",e.target.value)}/>
+              :<input type="number" placeholder="e.g. 165" value={form.targetWeightLbs}
+                  style={{width:88}} onChange={e=>set("targetWeightLbs",e.target.value)}/>
+            }
+            <span className="lbl2">{form.weightUnit}</span>
+          </div>
+        )}
+
+        <div style={{marginBottom:10}}>
+          <div className="lbl" style={{marginBottom:8}}>Activity level</div>
+          {ACTIVITY.map(a=>(
+            <div key={a.id} onClick={()=>set("activityLevel",a.id)}
+              style={{display:"flex",alignItems:"center",gap:12,padding:"10px",borderRadius:8,
+                cursor:"pointer",marginBottom:5,userSelect:"none",
+                background:form.activityLevel===a.id?"rgba(29,158,117,.1)":"transparent",
+                border:`0.5px solid ${form.activityLevel===a.id?"var(--green)":"var(--line)"}`}}>
+              <div style={{width:13,height:13,borderRadius:"50%",flexShrink:0,
+                border:`2px solid ${form.activityLevel===a.id?"var(--green)":"var(--txt3)"}`,
+                background:form.activityLevel===a.id?"var(--green)":"transparent"}}/>
+              <div>
+                <div style={{fontSize:13,fontWeight:form.activityLevel===a.id?500:400}}>{a.label}</div>
+                <div className="lbl2">{a.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginBottom:40}}>
+        {onCancel&&<button className="ghost" style={{height:38,padding:"0 16px"}} onClick={onCancel}>Cancel</button>}
+        <button style={{height:38,padding:"0 22px"}} onClick={()=>{if(validate())setStep(1);}}>Calculate my plan →</button>
+      </div>
+    </div>
+  );
+
+  // ── Step 1: goal selection + live targets preview ─────────────────────────
+  return (
+    <div className="wrap" style={{paddingTop:44}}>
+      <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:22}}>
+        <button className="ghost" style={{height:32,padding:"0 12px",fontSize:12.5}} onClick={()=>setStep(0)}>← Back</button>
+        <h1>Your plan</h1>
+      </div>
+
+      {/* BMR / TDEE derivation */}
+      {preview&&(
+        <div className="card" style={{padding:"13px 16px",marginBottom:12}}>
+          <div style={{fontSize:12.5,color:"var(--txt2)"}}>
+            <span style={{fontWeight:500}}>Mifflin-St Jeor BMR:</span> {preview._meta.bmr.toLocaleString()} kcal
+            <span className="lbl2"> · ×{preview._meta.actMult} ({preview._meta.act}) = TDEE </span>
+            <span style={{fontWeight:500}}>{preview._meta.tdee.toLocaleString()} kcal</span>
+          </div>
+        </div>
+      )}
+
+      {/* Goal selector */}
+      <div className="card" style={{padding:"16px 16px 10px",marginBottom:12}}>
+        <div style={{fontSize:13,fontWeight:500,marginBottom:10}}>Goal</div>
+        {GOALS.map(g=>(
+          <div key={g.id} onClick={()=>set("goal",g.id)}
+            style={{display:"flex",alignItems:"flex-start",gap:12,padding:"10px",borderRadius:8,
+              cursor:"pointer",marginBottom:6,userSelect:"none",
+              background:form.goal===g.id?"rgba(29,158,117,.1)":"transparent",
+              border:`0.5px solid ${form.goal===g.id?"var(--green)":"var(--line)"}`}}>
+            <div style={{width:13,height:13,borderRadius:"50%",flexShrink:0,marginTop:2,
+              border:`2px solid ${form.goal===g.id?"var(--green)":"var(--txt3)"}`,
+              background:form.goal===g.id?"var(--green)":"transparent"}}/>
+            <div>
+              <div style={{fontSize:13,fontWeight:form.goal===g.id?500:400}}>{g.label}</div>
+              <div className="lbl2">{g.desc}</div>
+            </div>
+          </div>
+        ))}
+
+        {form.goal==="fat_loss"&&(
+          <div style={{padding:"12px",marginTop:4,background:"var(--surface2)",borderRadius:8}}>
+            <div className="lbl" style={{marginBottom:8}}>
+              Calorie deficit: <span style={{color:"var(--txt)",fontWeight:500}}>{form.deficitPct}%</span> below TDEE
+              {preview&&<span className="lbl2"> → {preview.kcal.toLocaleString()} kcal/day</span>}
+            </div>
+            <input type="range" min="5" max="25" step="1" value={form.deficitPct}
+              style={{width:"100%",accentColor:"var(--green)"}}
+              onChange={e=>set("deficitPct",+e.target.value)}/>
+            <div style={{display:"flex",justifyContent:"space-between",marginTop:2}} className="lbl2">
+              <span>5% — gentle</span><span>25% — aggressive</span>
+            </div>
+            {preview&&preview.kcal<=preview._meta.floor&&(
+              <div style={{fontSize:11.5,color:"var(--amber2)",marginTop:6}}>
+                ⚠ Capped at safety minimum — {preview._meta.floor.toLocaleString()} kcal/day
+              </div>
+            )}
+          </div>
+        )}
+
+        {form.goal==="muscle_gain"&&(
+          <div style={{padding:"12px",marginTop:4,background:"var(--surface2)",borderRadius:8}}>
+            <div className="lbl" style={{marginBottom:8}}>
+              Calorie surplus: <span style={{color:"var(--txt)",fontWeight:500}}>{form.surplusPct}%</span> above TDEE
+              {preview&&<span className="lbl2"> → {preview.kcal.toLocaleString()} kcal/day</span>}
+            </div>
+            <input type="range" min="5" max="20" step="1" value={form.surplusPct}
+              style={{width:"100%",accentColor:"var(--green)"}}
+              onChange={e=>set("surplusPct",+e.target.value)}/>
+            <div style={{display:"flex",justifyContent:"space-between",marginTop:2}} className="lbl2">
+              <span>5% — lean bulk</span><span>20% — aggressive</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Live macro preview */}
+      {preview&&(
+        <div className="card" style={{padding:"16px",marginBottom:12}}>
+          <div style={{fontSize:13,fontWeight:500,marginBottom:12}}>Daily targets</div>
+          {[
+            {label:"Calories", val:preview.kcal.toLocaleString(),unit:"kcal",note:"target per day"},
+            {label:"Protein",  val:r0(preview.protein),          unit:"g",   note:"1.0 g/lb bodyweight — supports muscle retention"},
+            {label:"Fat",      val:r0(preview.fat),              unit:"g",   note:"25% of calories (min 0.3 g/lb)"},
+            {label:"Carbs",    val:r0(preview.carb),             unit:"g",   note:"remaining calories after protein & fat"},
+            {label:"Fiber",    val:r0(preview.fiber),            unit:"g",   note:"14 g per 1,000 kcal (DRI basis)"},
+          ].map(row=>(
+            <div key={row.label} className="aarow" style={{padding:"7px 0"}}>
+              <span style={{minWidth:72,fontSize:13}}>{row.label}</span>
+              <span className="mono" style={{fontSize:15,fontWeight:500,minWidth:52}}>{row.val}</span>
+              <span className="lbl2">{row.unit} · {row.note}</span>
+            </div>
+          ))}
+          <div style={{fontSize:11.5,color:"var(--txt3)",marginTop:14,lineHeight:1.7,
+            borderTop:"0.5px solid var(--line)",paddingTop:12}}>
+            Evidence-based starting points — adjust based on your body's response over 2–4 weeks.<br/>
+            Not medical advice. Consult a qualified professional for personalised guidance.
+          </div>
+        </div>
+      )}
+
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginBottom:40}}>
+        {onCancel&&<button className="ghost" style={{height:38,padding:"0 16px"}} onClick={onCancel}>Cancel</button>}
+        <button style={{height:38,padding:"0 22px"}} onClick={()=>{onSave({
+          age:+form.age,sex:form.sex,
+          heightCm:mH,weightKg:mW,targetWeightKg:mT,
+          activityLevel:form.activityLevel,goal:form.goal,
+          deficitPct:Math.min(Math.max(+form.deficitPct||20,5),25),
+          surplusPct:Math.min(Math.max(+form.surplusPct||10,5),20),
+        });}}>Save &amp; start tracking →</button>
+      </div>
     </div>
   );
 }
