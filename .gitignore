@@ -3,3 +3,9 @@ config.js
 
 # macOS metadata
 .DS_Store
+
+# R console history
+.Rhistory
+
+# Claude Code project memory
+.claude/
