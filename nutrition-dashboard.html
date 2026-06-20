@@ -391,9 +391,15 @@ function App(){
 
   useEffect(()=>{saveTodayLog(log);},[log]);
 
-  const targets=useMemo(()=>
-    profile?calcTargets(profile):{kcal:2000,protein:200,carb:180,fat:60,fiber:30,_meta:null}
-  ,[profile]);
+  const targets=useMemo(()=>{
+    if(!profile) return {kcal:2000,protein:200,carb:180,fat:60,fiber:30,_meta:null};
+    const science=calcTargets(profile);
+    if(profile.manualTargets){
+      // Spread science first so fiber (not in manualTargets) stays at the science value
+      return {...science,...profile.manualTargets,_meta:science._meta,_manual:true};
+    }
+    return science;
+  },[profile]);
 
   const totals=useMemo(()=>{
     const t={kcal:0,protein:0,carb:0,fat:0,fiber:0};
@@ -497,6 +503,7 @@ function App(){
         <span style={{color:"var(--txt3)"}}> · {r0(Math.max(targets.kcal-totals.kcal,0))} remaining</span>
       </div>
       {targets._meta&&<div className="lbl2" style={{marginBottom:18}}>
+        {targets._manual&&<span style={{color:"var(--amber2)",marginRight:4}}>Custom targets ·</span>}
         Mifflin-St Jeor BMR {targets._meta.bmr.toLocaleString()} · TDEE {targets._meta.tdee.toLocaleString()} · {
           targets._meta.goal==="recomp"?"recomp at maintenance":
           targets._meta.goal==="fat_loss"?`fat loss −${targets._meta.deficitPct}%`:
@@ -728,10 +735,16 @@ function Onboarding({initial,onSave,onCancel}){
     targetWeightLbs:String(initial.targetWeightKg?Math.round(initial.targetWeightKg*2.2046*10)/10:""),
     activityLevel:initial.activityLevel,
     goal:initial.goal,deficitPct:initial.deficitPct??20,surplusPct:initial.surplusPct??10,
+    manualMode:!!initial.manualTargets,
+    manualKcal:initial.manualTargets?String(initial.manualTargets.kcal):"",
+    manualProtein:initial.manualTargets?String(initial.manualTargets.protein):"",
+    manualCarb:initial.manualTargets?String(initial.manualTargets.carb):"",
+    manualFat:initial.manualTargets?String(initial.manualTargets.fat):"",
   }:{
     age:"",sex:"male",heightCm:"",heightUnit:"cm",heightFt:"",heightIn:"",
     weightKg:"",weightUnit:"kg",weightLbs:"",targetWeightKg:"",targetWeightLbs:"",
     activityLevel:"moderate",goal:"recomp",deficitPct:20,surplusPct:10,
+    manualMode:false,manualKcal:"",manualProtein:"",manualCarb:"",manualFat:"",
   };
 
   const [form,setForm]=useState(initForm);
@@ -780,6 +793,55 @@ function Onboarding({initial,onSave,onCancel}){
     deficitPct:Math.min(Math.max(+form.deficitPct||20,5),25),
     surplusPct:Math.min(Math.max(+form.surplusPct||10,5),20),
   }):null;
+
+  // Manual override derived values
+  const safeFloor=form.sex==="male"?1500:1200;
+  const impliedKcal=form.manualMode
+    ?Math.round((parseFloat(form.manualProtein)||0)*4+(parseFloat(form.manualCarb)||0)*4+(parseFloat(form.manualFat)||0)*9)
+    :null;
+  const manualKcalNum=parseFloat(form.manualKcal)||0;
+  const kcalMismatch=impliedKcal!==null&&impliedKcal>0&&manualKcalNum>0&&Math.abs(impliedKcal-manualKcalNum)>15;
+  const floorViolation=form.manualMode&&manualKcalNum>0&&manualKcalNum<safeFloor;
+
+  function toggleManual(){
+    if(!form.manualMode&&preview){
+      // Pre-fill with science values so the user edits from a sensible baseline
+      setForm(f=>({...f,manualMode:true,
+        manualKcal:String(preview.kcal),manualProtein:String(preview.protein),
+        manualCarb:String(preview.carb),manualFat:String(preview.fat)}));
+    } else {
+      set("manualMode",!form.manualMode);
+    }
+    setErrs(e=>({...e,manual:undefined}));
+  }
+
+  function doSave(){
+    let manualTargets=null;
+    if(form.manualMode){
+      const mk=Math.round(parseFloat(form.manualKcal)||0);
+      const mp=Math.round(parseFloat(form.manualProtein)||0);
+      const mc_raw=parseFloat(form.manualCarb);
+      const mc=isNaN(mc_raw)?null:Math.round(mc_raw);
+      const mf=Math.round(parseFloat(form.manualFat)||0);
+      if(mk<=0||mp<=0||mc===null||mc<0||mf<=0){
+        setErrs(e=>({...e,manual:"Fill in all fields. Carbs can be 0 g; calories, protein, and fat must be above zero."}));
+        return;
+      }
+      if(mk<safeFloor){
+        setErrs(e=>({...e,manual:`Calorie target must be at least ${safeFloor.toLocaleString()} kcal (safety minimum for ${form.sex==="male"?"men":"women"}).`}));
+        return;
+      }
+      manualTargets={kcal:mk,protein:mp,carb:mc,fat:mf};
+    }
+    onSave({
+      age:+form.age,sex:form.sex,
+      heightCm:mH,weightKg:mW,targetWeightKg:mT,
+      activityLevel:form.activityLevel,goal:form.goal,
+      deficitPct:Math.min(Math.max(+form.deficitPct||20,5),25),
+      surplusPct:Math.min(Math.max(+form.surplusPct||10,5),20),
+      manualTargets,
+    });
+  }
 
   // Small helpers for consistent field + segmented-button layout
   const fld=(label,err,el)=>(
@@ -988,15 +1050,102 @@ function Onboarding({initial,onSave,onCancel}){
         </div>
       )}
 
+      {/* Manual override section */}
+      <div className="card" style={{marginBottom:12,overflow:"hidden"}}>
+        <div style={{padding:"14px 16px",cursor:"pointer",display:"flex",
+          justifyContent:"space-between",alignItems:"center",userSelect:"none"}}
+          onClick={toggleManual}>
+          <div>
+            <div style={{fontSize:13,fontWeight:500}}>
+              {form.manualMode?"Manual targets active":"Adjust targets manually"}
+            </div>
+            <div className="lbl2">
+              {form.manualMode
+                ?"You are overriding the calculated values — macro cards will use these"
+                :"Edit calories and macros directly, with consistency check"}
+            </div>
+          </div>
+          <span className="lbl2" style={{flexShrink:0,marginLeft:12}}>{form.manualMode?"▲ close":"▼ open"}</span>
+        </div>
+
+        {form.manualMode&&(
+          <div style={{padding:"0 16px 16px",borderTop:"0.5px solid var(--line)"}}>
+            <div style={{marginTop:14}}>
+              {[
+                {label:"Calories",key:"manualKcal",  unit:"kcal"},
+                {label:"Protein", key:"manualProtein",unit:"g"},
+                {label:"Carbs",   key:"manualCarb",   unit:"g"},
+                {label:"Fat",     key:"manualFat",     unit:"g"},
+              ].map(f=>(
+                <div key={f.key} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                  <span style={{minWidth:68,fontSize:13,color:"var(--txt2)"}}>{f.label}</span>
+                  <input type="number" min="0" value={form[f.key]} style={{width:92}}
+                    onChange={e=>{set(f.key,e.target.value);setErrs(ev=>({...ev,manual:undefined}));}}/>
+                  <span className="lbl2">{f.unit}</span>
+                </div>
+              ))}
+
+              {/* Implied calorie check — only shown when fields have values */}
+              {impliedKcal!==null&&impliedKcal>0&&manualKcalNum>0&&(
+                <div style={{marginTop:12,padding:"10px 12px",borderRadius:8,
+                  background:kcalMismatch?"rgba(220,80,60,.07)":"rgba(29,158,117,.07)",
+                  border:`0.5px solid ${kcalMismatch?"#b44":"var(--green)"}`}}>
+                  {kcalMismatch?(
+                    <>
+                      <div style={{fontSize:12.5,color:"#e99",fontWeight:500,marginBottom:10}}>
+                        ⚠ Your macros total {impliedKcal.toLocaleString()} kcal but your calorie
+                        target is {manualKcalNum.toLocaleString()} — they don't match.
+                      </div>
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                        <button className="ghost" style={{height:30,padding:"0 10px",fontSize:11.5}}
+                          onClick={()=>{
+                            set("manualKcal",String(impliedKcal));
+                            setErrs(e=>({...e,manual:undefined}));
+                          }}>
+                          Adjust calories to {impliedKcal.toLocaleString()}
+                        </button>
+                        <button className="ghost" style={{height:30,padding:"0 10px",fontSize:11.5}}
+                          onClick={()=>{
+                            const nc=Math.max(0,Math.round(
+                              (manualKcalNum-(parseFloat(form.manualProtein)||0)*4-(parseFloat(form.manualFat)||0)*9)/4
+                            ));
+                            set("manualCarb",String(nc));
+                            setErrs(e=>({...e,manual:undefined}));
+                          }}>
+                          Adjust carbs to {Math.max(0,Math.round(
+                            (manualKcalNum-(parseFloat(form.manualProtein)||0)*4-(parseFloat(form.manualFat)||0)*9)/4
+                          ))}g
+                        </button>
+                      </div>
+                    </>
+                  ):(
+                    <div style={{fontSize:12.5,color:"var(--green)"}}>
+                      ✓ Macros total {impliedKcal.toLocaleString()} kcal — matches calorie target
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Safety floor warning */}
+              {floorViolation&&(
+                <div style={{fontSize:11.5,color:"var(--amber2)",marginTop:10}}>
+                  ⚠ {manualKcalNum.toLocaleString()} kcal is below the safe minimum
+                  ({safeFloor.toLocaleString()} kcal for {form.sex==="male"?"men":"women"}).
+                  Increase your calorie target before saving.
+                </div>
+              )}
+
+              {errs.manual&&(
+                <div style={{fontSize:11.5,color:"#e88",marginTop:10}}>{errs.manual}</div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
       <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginBottom:40}}>
         {onCancel&&<button className="ghost" style={{height:38,padding:"0 16px"}} onClick={onCancel}>Cancel</button>}
-        <button style={{height:38,padding:"0 22px"}} onClick={()=>{onSave({
-          age:+form.age,sex:form.sex,
-          heightCm:mH,weightKg:mW,targetWeightKg:mT,
-          activityLevel:form.activityLevel,goal:form.goal,
-          deficitPct:Math.min(Math.max(+form.deficitPct||20,5),25),
-          surplusPct:Math.min(Math.max(+form.surplusPct||10,5),20),
-        });}}>Save &amp; start tracking →</button>
+        <button style={{height:38,padding:"0 22px"}} onClick={doSave}>Save &amp; start tracking →</button>
       </div>
     </div>
   );
