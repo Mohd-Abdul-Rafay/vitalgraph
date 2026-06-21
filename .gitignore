@@ -1,6 +1,7 @@
 # API keys and secrets — never commit these
 config.js
 backend/.env
+web/.env.local
 
 # macOS metadata
 .DS_Store
