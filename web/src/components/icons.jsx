@@ -83,7 +83,50 @@ export const ChevronDownIcon = svg(
 export const LogoIcon = ({ size = 28 }) => (
   <svg width={size} height={size} viewBox="0 0 28 28" fill="none">
     <rect width="28" height="28" rx="7" fill="#13b88a"/>
-    <path d="M7 19l4.5-9 3 5.5 2-3.5 4.5 7" stroke="white" strokeWidth="2.2"
+    {/* Clean V lettermark — two arms meeting at the bottom centre */}
+    <path d="M7 8 L14 21 L21 8" stroke="white" strokeWidth="2.8"
       strokeLinecap="round" strokeLinejoin="round"/>
   </svg>
+)
+
+// ── Macro chip icons ──────────────────────────────────────────────────────────
+// Used in the 28×28 / 34×34 colored chips on the Nutrition and Dashboard pages.
+// Each fills with CSS currentColor so it inherits the chip's accent colour.
+const macroSvg = (children) => ({ size = 14 }) => (
+  <svg viewBox="0 0 16 16" width={size} height={size} fill="currentColor">
+    {children}
+  </svg>
+)
+
+// Lightning bolt — energy / calories
+export const KcalIcon = macroSvg(
+  <path d="M9.5 1.5 L4 9 L8 9 L6.5 14.5 L12 7 L8 7 Z"/>
+)
+
+// Dumbbell — protein / muscle
+export const ProteinIcon = macroSvg(
+  <>
+    <rect x="0.5" y="5.5" width="3" height="5" rx="1.5"/>
+    <rect x="12.5" y="5.5" width="3" height="5" rx="1.5"/>
+    <rect x="3" y="7" width="10" height="2" rx="1"/>
+  </>
+)
+
+// Bread slice — carbohydrates (rounded-top rectangle, unmistakable at small sizes)
+export const CarbIcon = macroSvg(
+  <path d="M3 7 Q3 2 8 2 Q13 2 13 7 L13 14 H3 Z"/>
+)
+
+// Water droplet — fat / oils
+export const FatIcon = macroSvg(
+  <path d="M8 2 Q13 7.5 13 11 Q13 15 8 15 Q3 15 3 11 Q3 7.5 8 2 Z"/>
+)
+
+// Leaf with centre vein — fibre / plant
+export const FiberIcon = macroSvg(
+  <>
+    <path d="M8 15 C5 13 2 8 3 4 C7 2 12 5 13 10 C11.5 13 10 14 8 15 Z"/>
+    <path d="M8 15 L5.5 7" stroke="white" strokeWidth="1.1"
+      strokeLinecap="round" fill="none" opacity=".45"/>
+  </>
 )

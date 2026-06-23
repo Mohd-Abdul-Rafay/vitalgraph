@@ -4,6 +4,7 @@ import { getProfile, scale } from '../data/foodData.js'
 import { useProfile } from '../context/ProfileContext.jsx'
 import { usdaCachePut, mapUsdaFood } from '../lib/usda.js'
 import { loadTodayLog, saveTodayLog } from '../lib/logStorage.js'
+import { Flame, Drumstick, Wheat, Droplet, Leaf } from 'lucide-react'
 
 // Read once at module load — Vite replaces import.meta.env at build time.
 const USDA_KEY = (import.meta.env.VITE_USDA_API_KEY ?? '').trim() || null
@@ -16,11 +17,11 @@ const CHIPS = [
 
 // ── Macro strip config ────────────────────────────────────────────────────────
 const MACROS = [
-  { key: 'kcal',    label: 'Calories', unit: 'kcal', abbr: 'Cal', color: 'var(--primary)', soft: 'var(--primary-soft)' },
-  { key: 'protein', label: 'Protein',  unit: 'g',    abbr: 'Pro', color: 'var(--primary)', soft: 'var(--primary-soft)' },
-  { key: 'carb',    label: 'Carbs',    unit: 'g',    abbr: 'Car', color: 'var(--blue)',    soft: 'var(--blue-soft)'    },
-  { key: 'fat',     label: 'Fat',      unit: 'g',    abbr: 'Fat', color: 'var(--amber)',   soft: 'var(--amber-soft)'   },
-  { key: 'fiber',   label: 'Fiber',    unit: 'g',    abbr: 'Fib', color: 'var(--coral)',   soft: 'var(--coral-soft)'   },
+  { key: 'kcal',    label: 'Calories', unit: 'kcal', Icon: Flame,     color: 'var(--primary)', soft: 'var(--primary-soft)' },
+  { key: 'protein', label: 'Protein',  unit: 'g',    Icon: Drumstick, color: 'var(--primary)', soft: 'var(--primary-soft)' },
+  { key: 'carb',    label: 'Carbs',    unit: 'g',    Icon: Wheat,     color: 'var(--blue)',    soft: 'var(--blue-soft)'    },
+  { key: 'fat',     label: 'Fat',      unit: 'g',    Icon: Droplet,   color: 'var(--amber)',   soft: 'var(--amber-soft)'   },
+  { key: 'fiber',   label: 'Fiber',    unit: 'g',    Icon: Leaf,      color: 'var(--coral)',   soft: 'var(--coral-soft)'   },
 ]
 
 // ── Category avatar colours ───────────────────────────────────────────────────
@@ -63,9 +64,9 @@ function tryResolve(text) {
 }
 
 // ── Shared card shell ─────────────────────────────────────────────────────────
-function Card({ children, style }) {
+function Card({ children, style, onClick }) {
   return (
-    <div style={{
+    <div onClick={onClick} style={{
       background: 'var(--surface)', border: '1px solid var(--border)',
       borderRadius: 'var(--radius)', padding: '20px 22px',
       boxShadow: 'var(--shadow-sm)', ...style,
@@ -76,7 +77,7 @@ function Card({ children, style }) {
 }
 
 // ── Macro stat card ───────────────────────────────────────────────────────────
-function MacroStat({ macro, value, target }) {
+function MacroStat({ macro, value, target, onClick, isOpen }) {
   const safeTarget = target || 1
   const display = macro.key === 'kcal'
     ? Math.round(value)
@@ -84,15 +85,24 @@ function MacroStat({ macro, value, target }) {
   const pct = Math.min((value / safeTarget) * 100, 100)
 
   return (
-    <Card style={{ padding: '16px 18px' }}>
+    <Card
+      onClick={onClick}
+      style={{
+        padding: '16px 18px',
+        border: isOpen ? '1.5px solid var(--primary)' : '1px solid var(--border)',
+        cursor: onClick ? 'pointer' : 'default',
+        transition: 'border-color .15s',
+        userSelect: 'none',
+      }}
+    >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
         <div style={{
           width: 28, height: 28, borderRadius: 7,
           background: macro.soft, color: macro.color,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 10, fontWeight: 800, letterSpacing: -.2, flexShrink: 0,
+          flexShrink: 0,
         }}>
-          {macro.abbr}
+          <macro.Icon size={14} strokeWidth={2.1}/>
         </div>
         <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--txt2)' }}>
           {macro.label}
@@ -417,6 +427,250 @@ function ConfigurePanel({ pending, setPending, onConfirm }) {
   )
 }
 
+// ── Amino acid constants ──────────────────────────────────────────────────────
+const ESSENTIAL_AA = [
+  'histidine', 'isoleucine', 'leucine', 'lysine', 'methionine',
+  'phenylalanine', 'threonine', 'tryptophan', 'valine',
+]
+const NONESSENTIAL_AA = [
+  'alanine', 'arginine', 'aspartate', 'cystine', 'glutamate',
+  'glycine', 'proline', 'serine', 'tyrosine',
+]
+const AA_LABEL = {
+  histidine:'Histidine', isoleucine:'Isoleucine', leucine:'Leucine',
+  lysine:'Lysine', methionine:'Methionine', phenylalanine:'Phenylalanine',
+  threonine:'Threonine', tryptophan:'Tryptophan', valine:'Valine',
+  alanine:'Alanine', arginine:'Arginine', aspartate:'Aspartate',
+  cystine:'Cystine', glutamate:'Glutamate', glycine:'Glycine',
+  proline:'Proline', serine:'Serine', tyrosine:'Tyrosine',
+}
+
+// Sum a sub-profile field across today's log, tracking "not reported" coverage.
+// Faithful port of the reference sumField() from nutrition-dashboard.html.
+function sumField(log, field, key) {
+  let sum = 0, reported = 0, total = 0
+  for (const e of log) {
+    const p = getProfile(e)[field]
+    if (!p) { total++; continue }
+    total++
+    if (p[key] == null) continue
+    reported++
+    sum += scale(p[key], e.grams) || 0
+  }
+  return { sum, reported, total }
+}
+
+// ── Sub-profile breakdown (carbs / fat / fiber) ───────────────────────────────
+function SubProfile({ log, field, rows }) {
+  return (
+    <div>
+      {rows.map(([key, label]) => {
+        const { sum, reported: rep, total } = sumField(log, field, key)
+        const none = rep === 0
+        return (
+          <div key={key} style={{
+            display: 'flex', alignItems: 'center', gap: 12,
+            padding: '7px 0', borderBottom: '1px solid var(--border)',
+          }}>
+            <span style={{ flex: '0 0 170px', fontSize: 13, color: 'var(--txt2)' }}>
+              {label}
+            </span>
+            <span style={{
+              minWidth: 68, textAlign: 'right', fontSize: 13.5, fontWeight: 600,
+              fontVariantNumeric: 'tabular-nums',
+              color: none ? 'var(--txt3)' : 'var(--txt)',
+            }}>
+              {none ? '—' : `${Math.round(sum * 10) / 10} g`}
+            </span>
+            <span style={{ flex: 1, fontSize: 11.5, color: 'var(--txt3)', textAlign: 'right' }}>
+              {none ? 'not reported' : rep < total ? `${rep}/${total} foods reported` : ''}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Amino acid profile panel ──────────────────────────────────────────────────
+function AminoProfile({ log }) {
+  const [expand, setExpand] = useState(false)
+
+  // Aggregate amino sums (mg) across all log entries; track which aminos were reported.
+  // Values in foodData.js are mg/100g; scale() converts to mg for the eaten portion.
+  const sums = {}, reported = {}
+  ;[...ESSENTIAL_AA, ...NONESSENTIAL_AA].forEach(a => { sums[a] = 0; reported[a] = false })
+  for (const e of log) {
+    const profile = getProfile(e)
+    if (!profile.amino) continue
+    for (const a in sums) {
+      const v = profile.amino[a]
+      if (v != null) { sums[a] += scale(v, e.grams) || 0; reported[a] = true }
+    }
+  }
+  const maxEss = Math.max(...ESSENTIAL_AA.map(a => sums[a]), 1)
+  const list = expand ? [...ESSENTIAL_AA, ...NONESSENTIAL_AA] : ESSENTIAL_AA
+
+  return (
+    <div>
+      {!expand && (
+        <div style={{ fontSize: 12, color: 'var(--txt3)', marginBottom: 12 }}>
+          9 essential amino acids · leucine drives muscle protein synthesis
+        </div>
+      )}
+      {list.map(a => {
+        const isLeucine = a === 'leucine'
+        const isEss = ESSENTIAL_AA.includes(a)
+        const valMg = sums[a]
+        const valG = valMg / 1000
+
+        return (
+          <div key={a} style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: isLeucine ? '7px 8px' : '6px 0',
+            borderBottom: '1px solid var(--border)',
+            ...(isLeucine && {
+              background: 'var(--primary-soft)', borderRadius: 7, margin: '2px -8px',
+            }),
+          }}>
+            <span style={{
+              minWidth: 130, fontSize: 13,
+              fontWeight: isLeucine ? 600 : 400,
+              color: isEss ? 'var(--txt)' : 'var(--txt2)',
+            }}>
+              {AA_LABEL[a]}
+              {isLeucine && (
+                <span style={{
+                  display: 'inline-block', fontSize: 10, fontWeight: 700,
+                  marginLeft: 7, padding: '1px 5px', borderRadius: 4,
+                  color: 'var(--primary)', background: 'var(--primary-mid)',
+                  letterSpacing: 0.3,
+                }}>
+                  MPS
+                </span>
+              )}
+            </span>
+            <div style={{ flex: 1, height: 5, borderRadius: 99, background: 'var(--border)', overflow: 'hidden' }}>
+              <div style={{
+                height: '100%', borderRadius: 99,
+                width: `${Math.min((valMg / maxEss) * 100, 100)}%`,
+                background: isLeucine ? 'var(--primary)' : 'rgba(19,184,138,.38)',
+                transition: 'width .4s ease',
+              }} />
+            </div>
+            <span style={{
+              fontSize: 12.5, minWidth: 64, textAlign: 'right',
+              fontVariantNumeric: 'tabular-nums',
+              color: reported[a] ? 'var(--txt2)' : 'var(--txt3)',
+            }}>
+              {reported[a]
+                ? (valG >= 1 ? `${Math.round(valG * 10) / 10} g` : `${Math.round(valMg)} mg`)
+                : '—'}
+            </span>
+          </div>
+        )
+      })}
+      <button
+        type="button"
+        onClick={() => setExpand(x => !x)}
+        style={{
+          marginTop: 12, height: 32, padding: '0 14px', fontSize: 12.5,
+          border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
+          background: 'none', color: 'var(--txt2)', cursor: 'pointer',
+        }}
+      >
+        {expand ? 'Show essential only' : 'Show all 18 amino acids'}
+      </button>
+    </div>
+  )
+}
+
+// ── Macro drill-down panel ────────────────────────────────────────────────────
+const DRILL_LABEL = {
+  protein: 'Amino acid profile',
+  carb:    'Carbohydrate profile',
+  fat:     'Fatty acid profile',
+  fiber:   'Fiber profile',
+}
+
+function DrillDown({ macroKey, log }) {
+  // Foods that contributed to this macro today, ranked by contribution.
+  const sources = log.map(e => {
+    const variantLabel = e.variantId && e.food.variants
+      ? e.food.variants.find(v => v.id === e.variantId)?.label : null
+    const amt = scale(getProfile(e).macros[macroKey], e.grams) || 0
+    return { name: e.food.name, brand: e.food.brand, variantLabel, amt }
+  }).filter(s => s.amt > 0.05).sort((a, b) => b.amt - a.amt)
+
+  const unit = macroKey === 'kcal' ? 'kcal' : 'g'
+
+  return (
+    <Card style={{ marginBottom: 14, padding: '20px 22px', animation: 'vgSlideIn .2s ease' }}>
+
+      {/* Sources */}
+      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--txt)', marginBottom: 10 }}>
+        Your sources today
+      </div>
+      {sources.length === 0 ? (
+        <div style={{ fontSize: 13, color: 'var(--txt3)', paddingBottom: 14 }}>
+          Nothing logged yet contributes to this macro.
+        </div>
+      ) : (
+        <div style={{ marginBottom: 16 }}>
+          {sources.map((s, i) => (
+            <div key={i} style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '6px 0', borderBottom: '1px solid var(--border)',
+            }}>
+              <span style={{ fontSize: 13, color: 'var(--txt)' }}>
+                {s.name}
+                {s.brand && <span style={{ color: 'var(--txt3)', fontSize: 12 }}> · {s.brand}</span>}
+                {s.variantLabel && <span style={{ color: 'var(--txt3)', fontSize: 12 }}> · {s.variantLabel}</span>}
+              </span>
+              <span style={{
+                fontSize: 12.5, fontVariantNumeric: 'tabular-nums',
+                color: 'var(--txt2)', flexShrink: 0, marginLeft: 12,
+              }}>
+                {Math.round(s.amt * 10) / 10} {unit}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Sub-profile breakdown */}
+      <div style={{ paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--txt)', marginBottom: 12 }}>
+          {DRILL_LABEL[macroKey]}
+        </div>
+        {macroKey === 'protein' && <AminoProfile log={log} />}
+        {macroKey === 'carb' && (
+          <SubProfile log={log} field="carbProfile" rows={[
+            ['sugars', 'Sugars'],
+            ['starch', 'Starch'],
+            ['addedSugar', 'Added sugar'],
+          ]} />
+        )}
+        {macroKey === 'fat' && (
+          <SubProfile log={log} field="fatProfile" rows={[
+            ['sat', 'Saturated'],
+            ['mono', 'Monounsaturated'],
+            ['poly', 'Polyunsaturated'],
+            ['omega3', 'Omega-3'],
+            ['omega6', 'Omega-6'],
+          ]} />
+        )}
+        {macroKey === 'fiber' && (
+          <SubProfile log={log} field="fiberProfile" rows={[
+            ['soluble', 'Soluble'],
+            ['insoluble', 'Insoluble'],
+          ]} />
+        )}
+      </div>
+    </Card>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function Nutrition() {
   const { targets: TARGETS } = useProfile()
@@ -424,6 +678,9 @@ export default function Nutrition() {
   const [input, setInput]   = useState('')
   const [error, setError]   = useState('')
   const [focused, setFocused] = useState(false)
+
+  // Expanded macro drill-down: null | 'protein' | 'carb' | 'fat' | 'fiber'
+  const [open, setOpen] = useState(null)
 
   // USDA search state machine
   // status: 'idle' | 'prompt' | 'loading' | 'results' | 'fetching'
@@ -560,14 +817,19 @@ export default function Nutrition() {
       </div>
 
       {/* ── Macro totals strip ───────────────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 12, marginBottom: 18 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 12, marginBottom: 12 }}>
         {MACROS.map(m => (
           <MacroStat key={m.key} macro={m}
             value={m.key === 'kcal' ? totals.kcal : totals[m.key]}
             target={TARGETS[m.key]}
+            onClick={m.key !== 'kcal' ? () => setOpen(o => o === m.key ? null : m.key) : undefined}
+            isOpen={open === m.key}
           />
         ))}
       </div>
+
+      {/* ── Drill-down panel (protein / carb / fat / fiber) ─────────────────── */}
+      {open && <DrillDown key={open} macroKey={open} log={log} />}
 
       {/* ── Log food card ────────────────────────────────────────────────────── */}
       <Card style={{ marginBottom: 14, padding: '20px 22px' }}>

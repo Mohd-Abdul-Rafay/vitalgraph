@@ -1,5 +1,6 @@
 import { useProfile } from '../context/ProfileContext.jsx'
 import { GOALS } from '../data/foodData.js'
+import { Drumstick, Wheat, Droplet, Leaf } from 'lucide-react'
 
 // Placeholder consumed values — replaced when nutrition log is shared across pages
 const PLACEHOLDER = {
@@ -18,10 +19,10 @@ const PLACEHOLDER = {
 }
 
 const MACRO_STYLE = {
-  protein: { color: 'var(--primary)',      soft: 'var(--primary-soft)', letter: 'P' },
-  carbs:   { color: 'var(--blue)',         soft: 'var(--blue-soft)',    letter: 'C' },
-  fat:     { color: 'var(--amber)',        soft: 'var(--amber-soft)',   letter: 'F' },
-  fiber:   { color: 'var(--coral)',        soft: 'var(--coral-soft)',   letter: 'Fb' },
+  protein: { color: 'var(--primary)', soft: 'var(--primary-soft)', Icon: Drumstick },
+  carbs:   { color: 'var(--blue)',    soft: 'var(--blue-soft)',    Icon: Wheat     },
+  fat:     { color: 'var(--amber)',   soft: 'var(--amber-soft)',   Icon: Droplet   },
+  fiber:   { color: 'var(--coral)',   soft: 'var(--coral-soft)',   Icon: Leaf      },
 }
 
 const FUTURE = [
@@ -67,7 +68,7 @@ function Card({ children, style }) {
 
 function MacroCard({ id, macro, target }) {
   const { value, unit } = macro
-  const { color, soft, letter } = MACRO_STYLE[id]
+  const { color, soft, Icon } = MACRO_STYLE[id]
   const pct = Math.min(value / (target || 1) * 100, 100)
   const label = id.charAt(0).toUpperCase() + id.slice(1)
 
@@ -78,9 +79,9 @@ function MacroCard({ id, macro, target }) {
           width: 34, height: 34, borderRadius: 8,
           background: soft, color, display: 'flex',
           alignItems: 'center', justifyContent: 'center',
-          fontSize: 12, fontWeight: 800, letterSpacing: -.3, flexShrink: 0,
+          flexShrink: 0,
         }}>
-          {letter}
+          <Icon size={16} strokeWidth={2.1}/>
         </div>
         <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--txt2)' }}>{label}</span>
       </div>
