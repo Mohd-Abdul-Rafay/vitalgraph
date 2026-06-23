@@ -63,9 +63,8 @@ The Plan page connects to the FastAPI backend to request a plain-language explan
 
 ```
 nutrition-app/
-├── web/                  # Vite + React app (the current product)
-├── backend/              # FastAPI server — AI plan-explainer endpoint
-└── nutrition-dashboard.html   # Original single-file prototype (kept for reference)
+├── web/        # Vite + React app (the current product)
+└── backend/    # FastAPI server — AI plan-explainer endpoint
 ```
 
 `web/` and `backend/` each have a `.env.example` documenting the required keys. Neither `.env.local` nor `backend/.env` are ever committed.
