@@ -2,6 +2,8 @@
 
 **A personal AI health companion — grounded in your own data, and honest about what it doesn't know.**
 
+🔗 **Live demo:** https://vitalgraph.vercel.app — nutrition tracking is live; AI coach, wearables, and lab reports are on the roadmap.
+
 ---
 
 ## What it is
@@ -44,7 +46,7 @@ Where the data source doesn't report a value (ghee has no amino data; many USDA 
 The daily log is stored in `localStorage` keyed by date. On reload, food objects are re-linked from the local database or USDA cache; only the minimal data (`foodId`, `grams`, `variantId`) is persisted.
 
 ### Grounded AI plan-explainer
-The Plan page connects to the FastAPI backend to request a plain-language explanation of your computed targets. The model receives your profile, BMR, TDEE, and macro targets — it explains the numbers, not hallucinations. The endpoint is rate-limited, requires no user authentication, and handles key management server-side.
+The Plan page connects to the FastAPI backend to request a plain-language explanation of your computed targets. The model receives your profile, BMR, TDEE, and macro targets — it explains the numbers, not hallucinations. The endpoint is rate-limited, requires no user authentication, and handles key management server-side. The explainer requires the local FastAPI backend; on the live demo it appears as "coming soon" until the backend is hosted.
 
 ---
 
@@ -112,5 +114,7 @@ The `.env.example` files in each directory document exactly which keys are neede
 - **Built for sustainable patterns** — not gamified streaks or restriction.
 
 ---
+
+*Built by an MS AI graduate with a focus on Medical-AI, ML, and Computer Vision — open to opportunities.*
 
 *VitalGraph is a personal project. It is a tracking and reasoning tool, not medical advice, and is not a substitute for professional healthcare.*
