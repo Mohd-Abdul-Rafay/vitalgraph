@@ -1,12 +1,13 @@
 import { NavLink } from 'react-router-dom'
+import { Utensils } from 'lucide-react'
 import {
-  LogoIcon, DashboardIcon, NutritionIcon,
+  LogoIcon, DashboardIcon,
   WearableIcon, ReportsIcon, CoachIcon, SettingsIcon,
 } from './icons'
 
 const NAV = [
   { to: '/dashboard', label: 'Dashboard', Icon: DashboardIcon },
-  { to: '/nutrition',  label: 'Nutrition',  Icon: NutritionIcon },
+  { to: '/nutrition',  label: 'Nutrition',  Icon: Utensils    },
 ]
 
 const SOON = [

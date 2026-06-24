@@ -121,7 +121,7 @@ export default function TopBar() {
       </div>
 
       {/* Right cluster */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
 
         <button style={{
           width: 36, height: 36, display: 'flex', alignItems: 'center',
