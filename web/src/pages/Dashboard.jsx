@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useProfile } from '../context/ProfileContext.jsx'
 import { GOALS, MICRO_META } from '../data/foodData.js'
 import { Drumstick, Wheat, Droplet, Leaf } from 'lucide-react'
-import { loadTodayLog, loadLogForDate } from '../lib/logStorage.js'
+import { loadLogForDate } from '../lib/logStorage.js'
 import { calcTotals } from '../lib/nutrition.js'
 
 const MACRO_STYLE = {
@@ -40,7 +40,10 @@ function dateStrOffset(daysAgo) {
   return d.toISOString().slice(0, 10)
 }
 
-// Averages kcal + macros over the last 7 days, counting only days with logged entries.
+// Averages kcal, macros, and all MICRO_META fields over the last 7 days.
+// Only counts days with at least one logged entry — sparse weeks average honestly.
+// Returns { avg: { kcal, protein, carb, fat, fiber, micro }, daysLogged }
+// or { avg: null, daysLogged: 0 } when nothing has been logged.
 function calcWeeklyAvg() {
   const logged = [0, 1, 2, 3, 4, 5, 6]
     .map(n => loadLogForDate(dateStrOffset(n)))
@@ -50,16 +53,27 @@ function calcWeeklyAvg() {
   const daysLogged = logged.length
   if (daysLogged === 0) return { avg: null, daysLogged: 0 }
 
+  const microKeys  = Object.keys(MICRO_META)
+  const microInit  = Object.fromEntries(microKeys.map(k => [k, 0]))
+
   const sum = logged.reduce(
-    (acc, t) => ({
-      kcal:    acc.kcal    + t.kcal,
-      protein: acc.protein + t.protein,
-      carb:    acc.carb    + t.carb,
-      fat:     acc.fat     + t.fat,
-      fiber:   acc.fiber   + t.fiber,
-    }),
-    { kcal: 0, protein: 0, carb: 0, fat: 0, fiber: 0 },
+    (acc, t) => {
+      const micro = { ...acc.micro }
+      microKeys.forEach(k => { micro[k] += t.micro[k] || 0 })
+      return {
+        kcal:    acc.kcal    + t.kcal,
+        protein: acc.protein + t.protein,
+        carb:    acc.carb    + t.carb,
+        fat:     acc.fat     + t.fat,
+        fiber:   acc.fiber   + t.fiber,
+        micro,
+      }
+    },
+    { kcal: 0, protein: 0, carb: 0, fat: 0, fiber: 0, micro: microInit },
   )
+
+  // micro values left un-rounded — MicroCard rounds to 1 dp internally
+  const micro = Object.fromEntries(microKeys.map(k => [k, sum.micro[k] / daysLogged]))
 
   return {
     avg: {
@@ -68,6 +82,7 @@ function calcWeeklyAvg() {
       carb:    Math.round(sum.carb    / daysLogged),
       fat:     Math.round(sum.fat     / daysLogged),
       fiber:   Math.round(sum.fiber   / daysLogged),
+      micro,
     },
     daysLogged,
   }
@@ -172,7 +187,7 @@ function EnergyCard({ consumed, target, pKcal, cKcal, fKcal }) {
   return (
     <Card style={{ display: 'flex', flexDirection: 'column' }}>
       <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--txt)', marginBottom: 20 }}>
-        Today's energy
+        7-day average
       </div>
       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
         <CalorieRing consumed={consumed} target={target} />
@@ -240,61 +255,6 @@ function MicroCard({ micro }) {
   )
 }
 
-function WeeklyAvgCard({ avg, daysLogged, targets }) {
-  return (
-    <Card style={{ padding: '20px 22px' }}>
-      <div style={{
-        display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
-        marginBottom: daysLogged > 0 ? 16 : 10,
-      }}>
-        <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--txt)' }}>Last 7 days</div>
-        <div style={{ fontSize: 12, color: 'var(--txt3)' }}>
-          based on {daysLogged} of 7 days logged
-        </div>
-      </div>
-
-      {daysLogged === 0 ? (
-        <p style={{ fontSize: 13, color: 'var(--txt3)' }}>
-          Log a few days to see your weekly average.
-        </p>
-      ) : (
-        <>
-          <div style={{ marginBottom: 16 }}>
-            <span style={{ fontSize: 30, fontWeight: 700, color: 'var(--txt)', lineHeight: 1 }}>
-              {avg.kcal.toLocaleString()}
-            </span>
-            <span style={{ fontSize: 13, color: 'var(--txt3)', marginLeft: 6 }}>avg kcal / day</span>
-            <span style={{ fontSize: 13, color: 'var(--txt3)', marginLeft: 10 }}>
-              · target {targets.kcal.toLocaleString()}
-            </span>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10 }}>
-            {[
-              { label: 'Protein', value: avg.protein, target: targets.protein, color: 'var(--primary)' },
-              { label: 'Carbs',   value: avg.carb,    target: targets.carb,   color: 'var(--blue)'    },
-              { label: 'Fat',     value: avg.fat,     target: targets.fat,    color: 'var(--amber)'   },
-              { label: 'Fiber',   value: avg.fiber,   target: targets.fiber,  color: 'var(--coral)'   },
-            ].map(({ label, value, target, color }) => (
-              <div key={label} style={{
-                padding: '12px 14px',
-                background: 'var(--bg)', border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-sm)',
-              }}>
-                <div style={{ fontSize: 11, color: 'var(--txt3)', marginBottom: 5 }}>{label}</div>
-                <div>
-                  <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--txt)' }}>{value}</span>
-                  <span style={{ fontSize: 11, color: 'var(--txt3)', marginLeft: 2 }}>g</span>
-                </div>
-                <div style={{ fontSize: 11, color, marginTop: 3 }}>target {target}g</div>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-    </Card>
-  )
-}
-
 function FutureCard() {
   return (
     <Card style={{ padding: '22px 24px' }}>
@@ -342,27 +302,25 @@ function FutureCard() {
 
 export default function Dashboard() {
   const { profile, targets } = useProfile()
-  const [log] = useState(loadTodayLog)
-  const totals = calcTotals(log)
+  const navigate = useNavigate()
+  const { avg, daysLogged } = calcWeeklyAvg()
 
   const today = new Date().toLocaleDateString(undefined, {
     weekday: 'short', month: 'long', day: 'numeric',
   })
-
   const goalLabel = profile ? (GOALS.find(g => g.id === profile.goal)?.label ?? profile.goal) : 'Recomp'
-  const consumed  = Math.round(totals.kcal)
-  const pKcal     = Math.round(totals.protein * 4)
-  const cKcal     = Math.round(totals.carb * 4)
-  const fKcal     = Math.round(totals.fat * 9)
 
-  const { avg, daysLogged } = calcWeeklyAvg()
+  const consumed = avg ? avg.kcal                      : 0
+  const pKcal    = avg ? Math.round(avg.protein * 4)   : 0
+  const cKcal    = avg ? Math.round(avg.carb    * 4)   : 0
+  const fKcal    = avg ? Math.round(avg.fat     * 9)   : 0
 
-  const macroRows = [
-    { id: 'protein', macro: { value: Math.round(totals.protein), unit: 'g' }, target: targets.protein },
-    { id: 'carbs',   macro: { value: Math.round(totals.carb),    unit: 'g' }, target: targets.carb   },
-    { id: 'fat',     macro: { value: Math.round(totals.fat),     unit: 'g' }, target: targets.fat    },
-    { id: 'fiber',   macro: { value: Math.round(totals.fiber),   unit: 'g' }, target: targets.fiber  },
-  ]
+  const macroRows = avg ? [
+    { id: 'protein', macro: { value: avg.protein, unit: 'g' }, target: targets.protein },
+    { id: 'carbs',   macro: { value: avg.carb,    unit: 'g' }, target: targets.carb   },
+    { id: 'fat',     macro: { value: avg.fat,     unit: 'g' }, target: targets.fat    },
+    { id: 'fiber',   macro: { value: avg.fiber,   unit: 'g' }, target: targets.fiber  },
+  ] : []
 
   return (
     <div>
@@ -377,7 +335,9 @@ export default function Dashboard() {
             {greeting()}, Rafay
           </h1>
           <p style={{ fontSize: 13.5, color: 'var(--txt3)', marginTop: 5 }}>
-            {today} · {consumed.toLocaleString()} of {targets.kcal.toLocaleString()} kcal · {goalLabel}
+            {daysLogged > 0
+              ? `${today} · 7-day avg · ${daysLogged} of 7 days logged · ${goalLabel}`
+              : `${today} · ${goalLabel}`}
           </p>
         </div>
         <button style={{
@@ -400,30 +360,58 @@ export default function Dashboard() {
         </button>
       </div>
 
-      {/* Empty-state nudge — shown only until the first food is logged */}
-      {log.length === 0 && (
-        <p style={{ fontSize: 13, color: 'var(--txt3)', marginBottom: 20 }}>
-          Nothing logged yet — log your first food to see your day come together.
-        </p>
+      {daysLogged === 0 ? (
+
+        /* Empty state — strong CTA to the Nutrition page */
+        <Card style={{ padding: '44px 32px', textAlign: 'center', marginBottom: 20 }}>
+          <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--txt)', marginBottom: 10 }}>
+            No data yet
+          </div>
+          <p style={{
+            fontSize: 14, color: 'var(--txt3)', lineHeight: 1.65,
+            maxWidth: 380, margin: '0 auto 28px',
+          }}>
+            Log at least one day of food to see your 7-day trends here.
+          </p>
+          <button
+            onClick={() => navigate('/nutrition')}
+            style={{
+              height: 42, padding: '0 28px',
+              background: 'var(--primary)', color: '#fff',
+              border: 'none', borderRadius: 'var(--radius-sm)',
+              fontSize: 14, fontWeight: 600, cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(19,184,138,.3)',
+              transition: 'background .15s, box-shadow .15s',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = 'var(--primary-dark)'
+              e.currentTarget.style.boxShadow = '0 4px 14px rgba(19,184,138,.4)'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = 'var(--primary)'
+              e.currentTarget.style.boxShadow = '0 2px 8px rgba(19,184,138,.3)'
+            }}
+          >
+            Start logging →
+          </button>
+        </Card>
+
+      ) : (
+        <>
+          {/* Macro cards — 7-day averages */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 20 }}>
+            {macroRows.map(({ id, macro, target }) => (
+              <MacroCard key={id} id={id} macro={macro} target={target} />
+            ))}
+          </div>
+
+          {/* Energy ring + Micros — 7-day averages */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.35fr', gap: 14, marginBottom: 20 }}>
+            <EnergyCard consumed={consumed} target={targets.kcal} pKcal={pKcal} cKcal={cKcal} fKcal={fKcal} />
+            <MicroCard micro={avg.micro} />
+          </div>
+        </>
       )}
-
-      {/* Macro cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 20 }}>
-        {macroRows.map(({ id, macro, target }) => (
-          <MacroCard key={id} id={id} macro={macro} target={target} />
-        ))}
-      </div>
-
-      {/* Energy ring + Micros */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.35fr', gap: 14, marginBottom: 20 }}>
-        <EnergyCard consumed={consumed} target={targets.kcal} pKcal={pKcal} cKcal={cKcal} fKcal={fKcal} />
-        <MicroCard micro={totals.micro} />
-      </div>
-
-      {/* Weekly average */}
-      <div style={{ marginBottom: 20 }}>
-        <WeeklyAvgCard avg={avg} daysLogged={daysLogged} targets={targets} />
-      </div>
 
       {/* Future features */}
       <FutureCard />
