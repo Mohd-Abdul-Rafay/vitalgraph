@@ -688,6 +688,8 @@ export default function Nutrition() {
   const [usda, setUsda]       = useState(USDA_IDLE)
   // Configure panel state — set when matched food has variants
   const [pending, setPending] = useState(null)
+  // Active meal context — applied to every entry logged until changed
+  const [meal, setMeal] = useState('Breakfast')
 
   useEffect(() => { saveTodayLog(log) }, [log])
 
@@ -715,7 +717,7 @@ export default function Nutrition() {
 
       // Single-profile food — log immediately
       setPending(null)
-      setLog(prev => [...prev, { uid: crypto.randomUUID(), food, grams, variantId: null, displayQty }])
+      setLog(prev => [...prev, { uid: crypto.randomUUID(), food, grams, variantId: null, meal, displayQty }])
       setInput('')
       return
     }
@@ -737,7 +739,7 @@ export default function Nutrition() {
 
   // ── Confirm a configured entry (from ConfigurePanel) ───────────────────────
   function confirmPending(food, variantId, grams, displayQty) {
-    setLog(prev => [...prev, { uid: crypto.randomUUID(), food, grams, variantId, displayQty }])
+    setLog(prev => [...prev, { uid: crypto.randomUUID(), food, grams, variantId, meal, displayQty }])
     setInput('')
     setPending(null)
     setError('')
@@ -784,7 +786,7 @@ export default function Nutrition() {
       const grams      = usda.parsedGrams ?? food.perUnit.grams
       const displayQty = `${grams}g`
 
-      setLog(prev => [...prev, { uid: crypto.randomUUID(), food, grams, variantId: null, displayQty }])
+      setLog(prev => [...prev, { uid: crypto.randomUUID(), food, grams, variantId: null, meal, displayQty }])
       setInput('')
       setUsda(USDA_IDLE)
     } catch (e) {
@@ -937,6 +939,30 @@ export default function Nutrition() {
         </div>
       </Card>
 
+      {/* ── Meal selector ────────────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+        <span style={{ fontSize: 12, color: 'var(--txt3)', fontWeight: 500, flexShrink: 0 }}>
+          Logging for:
+        </span>
+        {['Breakfast', 'Lunch', 'Dinner', 'Snacks'].map(m => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMeal(m)}
+            style={{
+              height: 30, padding: '0 14px', borderRadius: 99,
+              border: `1.5px solid ${meal === m ? 'var(--primary)' : 'var(--border)'}`,
+              background: meal === m ? 'var(--primary-soft)' : 'none',
+              color: meal === m ? 'var(--primary)' : 'var(--txt3)',
+              fontSize: 12.5, fontWeight: meal === m ? 650 : 450,
+              cursor: 'pointer', transition: 'all .12s',
+            }}
+          >
+            {m}
+          </button>
+        ))}
+      </div>
+
       {/* ── Log list card ────────────────────────────────────────────────────── */}
       <Card>
         <div style={{
@@ -991,98 +1017,135 @@ export default function Nutrition() {
           </div>
         )}
 
-        {/* Log entries */}
+        {/* Log entries — grouped by meal in fixed order */}
         {log.length > 0 && (
           <div>
-            {log.map((entry, i) => {
-              const prof = getProfile(entry)
-              const kcal = Math.round(scale(prof.macros.kcal,    entry.grams))
-              const prot = Math.round(scale(prof.macros.protein, entry.grams) * 10) / 10
-              const cat  = CAT_STYLE[entry.food.category] || CAT_STYLE.protein
-              const init = entry.food.name
-                .split(/[\s,]+/).filter(Boolean)
-                .slice(0, 2).map(w => w[0].toUpperCase()).join('')
+            {['Breakfast', 'Lunch', 'Dinner', 'Snacks']
+              .map(mealName => ({
+                mealName,
+                entries: log.filter(e => (e.meal ?? 'Snacks') === mealName),
+              }))
+              .filter(g => g.entries.length > 0)
+              .map(({ mealName, entries }, gIdx) => {
+                const mealKcal = Math.round(
+                  entries.reduce((s, e) => s + (scale(getProfile(e).macros.kcal, e.grams) || 0), 0)
+                )
+                const mealProt = Math.round(
+                  entries.reduce((s, e) => s + (scale(getProfile(e).macros.protein, e.grams) || 0), 0) * 10
+                ) / 10
 
-              return (
-                <div
-                  key={entry.uid}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 12, padding: '11px 0',
-                    borderTop: i > 0 ? '1px solid var(--border)' : 'none',
-                  }}
-                >
-                  {/* Category avatar */}
-                  <div style={{
-                    width: 36, height: 36, borderRadius: 9, flexShrink: 0,
-                    background: cat.soft, color: cat.color,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 11, fontWeight: 800,
-                  }}>
-                    {init}
-                  </div>
-
-                  {/* Name + amount */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
+                return (
+                  <div key={mealName}>
+                    {/* Meal group header */}
                     <div style={{
-                      fontSize: 13.5, fontWeight: 600, color: 'var(--txt)', lineHeight: 1.3,
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '8px 0 6px',
+                      borderTop: gIdx > 0 ? '1px solid var(--border)' : 'none',
                     }}>
-                      {entry.food.name}
+                      <span style={{
+                        fontSize: 11, fontWeight: 700, color: 'var(--txt3)',
+                        textTransform: 'uppercase', letterSpacing: 0.7,
+                      }}>
+                        {mealName}
+                      </span>
+                      <span style={{ fontSize: 11.5, color: 'var(--txt3)' }}>
+                        {mealKcal.toLocaleString()} kcal · {mealProt}g protein
+                      </span>
                     </div>
-                    <div style={{ fontSize: 12, color: 'var(--txt3)', marginTop: 2 }}>
-                      {entry.displayQty}
-                      {entry.variantId && entry.food.variants && (
-                        <span style={{ marginLeft: 5 }}>
-                          · {entry.food.variants.find(v => v.id === entry.variantId)?.label}
-                        </span>
-                      )}
-                      {entry.food.brand && (
-                        <span style={{ marginLeft: 5, color: 'var(--border2)' }}>
-                          · {entry.food.brand}
-                        </span>
-                      )}
-                      {entry.food.category === 'usda' && (
-                        <span style={{ marginLeft: 5, color: 'var(--violet)', fontWeight: 600, fontSize: 10.5 }}>
-                          USDA
-                        </span>
-                      )}
-                    </div>
-                  </div>
 
-                  {/* Kcal + protein */}
-                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--txt)' }}>
-                      {kcal.toLocaleString()} kcal
-                    </div>
-                    <div style={{ fontSize: 11.5, color: 'var(--txt3)', marginTop: 2 }}>
-                      {prot}g protein
-                    </div>
-                  </div>
+                    {/* Entries within this meal */}
+                    {entries.map((entry, i) => {
+                      const prof = getProfile(entry)
+                      const kcal = Math.round(scale(prof.macros.kcal,    entry.grams))
+                      const prot = Math.round(scale(prof.macros.protein, entry.grams) * 10) / 10
+                      const cat  = CAT_STYLE[entry.food.category] || CAT_STYLE.protein
+                      const init = entry.food.name
+                        .split(/[\s,]+/).filter(Boolean)
+                        .slice(0, 2).map(w => w[0].toUpperCase()).join('')
 
-                  {/* Remove button */}
-                  <button
-                    type="button"
-                    onClick={() => removeEntry(entry.uid)}
-                    aria-label={`Remove ${entry.food.name}`}
-                    style={{
-                      width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
-                      border: '1px solid var(--border)', background: 'none',
-                      cursor: 'pointer', display: 'flex', alignItems: 'center',
-                      justifyContent: 'center', fontSize: 15, lineHeight: 1,
-                      color: 'var(--txt3)', transition: 'all .12s',
-                    }}
-                    onMouseEnter={e => Object.assign(e.currentTarget.style, {
-                      borderColor: 'var(--coral)', color: 'var(--coral)', background: 'var(--coral-soft)',
+                      return (
+                        <div
+                          key={entry.uid}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 12, padding: '11px 0',
+                            borderTop: i > 0 ? '1px solid var(--border)' : 'none',
+                          }}
+                        >
+                          {/* Category avatar */}
+                          <div style={{
+                            width: 36, height: 36, borderRadius: 9, flexShrink: 0,
+                            background: cat.soft, color: cat.color,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: 11, fontWeight: 800,
+                          }}>
+                            {init}
+                          </div>
+
+                          {/* Name + amount */}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{
+                              fontSize: 13.5, fontWeight: 600, color: 'var(--txt)', lineHeight: 1.3,
+                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            }}>
+                              {entry.food.name}
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--txt3)', marginTop: 2 }}>
+                              {entry.displayQty}
+                              {entry.variantId && entry.food.variants && (
+                                <span style={{ marginLeft: 5 }}>
+                                  · {entry.food.variants.find(v => v.id === entry.variantId)?.label}
+                                </span>
+                              )}
+                              {entry.food.brand && (
+                                <span style={{ marginLeft: 5, color: 'var(--border2)' }}>
+                                  · {entry.food.brand}
+                                </span>
+                              )}
+                              {entry.food.category === 'usda' && (
+                                <span style={{ marginLeft: 5, color: 'var(--violet)', fontWeight: 600, fontSize: 10.5 }}>
+                                  USDA
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Kcal + protein */}
+                          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                            <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--txt)' }}>
+                              {kcal.toLocaleString()} kcal
+                            </div>
+                            <div style={{ fontSize: 11.5, color: 'var(--txt3)', marginTop: 2 }}>
+                              {prot}g protein
+                            </div>
+                          </div>
+
+                          {/* Remove button */}
+                          <button
+                            type="button"
+                            onClick={() => removeEntry(entry.uid)}
+                            aria-label={`Remove ${entry.food.name}`}
+                            style={{
+                              width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
+                              border: '1px solid var(--border)', background: 'none',
+                              cursor: 'pointer', display: 'flex', alignItems: 'center',
+                              justifyContent: 'center', fontSize: 15, lineHeight: 1,
+                              color: 'var(--txt3)', transition: 'all .12s',
+                            }}
+                            onMouseEnter={e => Object.assign(e.currentTarget.style, {
+                              borderColor: 'var(--coral)', color: 'var(--coral)', background: 'var(--coral-soft)',
+                            })}
+                            onMouseLeave={e => Object.assign(e.currentTarget.style, {
+                              borderColor: 'var(--border)', color: 'var(--txt3)', background: 'none',
+                            })}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      )
                     })}
-                    onMouseLeave={e => Object.assign(e.currentTarget.style, {
-                      borderColor: 'var(--border)', color: 'var(--txt3)', background: 'none',
-                    })}
-                  >
-                    ×
-                  </button>
-                </div>
-              )
-            })}
+                  </div>
+                )
+              })}
           </div>
         )}
 

@@ -37,6 +37,7 @@ export function loadTodayLog() {
         food,
         grams:      e.grams,
         variantId:  e.variantId ?? null,
+        meal:       e.meal ?? 'Snacks',
         displayQty: deriveDisplayQty(food, e.grams),
       }
     }).filter(Boolean)
@@ -59,6 +60,7 @@ export function loadLogForDate(dateStr) {
         food,
         grams:      e.grams,
         variantId:  e.variantId ?? null,
+        meal:       e.meal ?? 'Snacks',
         displayQty: deriveDisplayQty(food, e.grams),
       }
     }).filter(Boolean)
@@ -75,6 +77,7 @@ export function saveTodayLog(log) {
       foodId:    e.food.id,
       grams:     e.grams,
       variantId: e.variantId ?? null,
+      meal:      e.meal ?? 'Snacks',
     }))
     localStorage.setItem(LOG_KEY, JSON.stringify(all))
   } catch {}
