@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useProfile } from '../context/ProfileContext.jsx'
 import { GOALS, MICRO_META } from '../data/foodData.js'
 import { Drumstick, Wheat, Droplet, Leaf } from 'lucide-react'
-import { loadTodayLog } from '../lib/logStorage.js'
+import { loadTodayLog, loadLogForDate } from '../lib/logStorage.js'
 import { calcTotals } from '../lib/nutrition.js'
 
 const MACRO_STYLE = {
@@ -32,6 +32,46 @@ const FUTURE = [
     tagColor: 'var(--primary)', tagBg: 'var(--primary-soft)',
   },
 ]
+
+// Returns the ISO date string (YYYY-MM-DD, UTC) for N days ago, matching todayStr's convention.
+function dateStrOffset(daysAgo) {
+  const d = new Date()
+  d.setUTCDate(d.getUTCDate() - daysAgo)
+  return d.toISOString().slice(0, 10)
+}
+
+// Averages kcal + macros over the last 7 days, counting only days with logged entries.
+function calcWeeklyAvg() {
+  const logged = [0, 1, 2, 3, 4, 5, 6]
+    .map(n => loadLogForDate(dateStrOffset(n)))
+    .filter(log => log.length > 0)
+    .map(log => calcTotals(log))
+
+  const daysLogged = logged.length
+  if (daysLogged === 0) return { avg: null, daysLogged: 0 }
+
+  const sum = logged.reduce(
+    (acc, t) => ({
+      kcal:    acc.kcal    + t.kcal,
+      protein: acc.protein + t.protein,
+      carb:    acc.carb    + t.carb,
+      fat:     acc.fat     + t.fat,
+      fiber:   acc.fiber   + t.fiber,
+    }),
+    { kcal: 0, protein: 0, carb: 0, fat: 0, fiber: 0 },
+  )
+
+  return {
+    avg: {
+      kcal:    Math.round(sum.kcal    / daysLogged),
+      protein: Math.round(sum.protein / daysLogged),
+      carb:    Math.round(sum.carb    / daysLogged),
+      fat:     Math.round(sum.fat     / daysLogged),
+      fiber:   Math.round(sum.fiber   / daysLogged),
+    },
+    daysLogged,
+  }
+}
 
 function greeting() {
   const h = new Date().getHours()
@@ -200,6 +240,61 @@ function MicroCard({ micro }) {
   )
 }
 
+function WeeklyAvgCard({ avg, daysLogged, targets }) {
+  return (
+    <Card style={{ padding: '20px 22px' }}>
+      <div style={{
+        display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
+        marginBottom: daysLogged > 0 ? 16 : 10,
+      }}>
+        <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--txt)' }}>Last 7 days</div>
+        <div style={{ fontSize: 12, color: 'var(--txt3)' }}>
+          based on {daysLogged} of 7 days logged
+        </div>
+      </div>
+
+      {daysLogged === 0 ? (
+        <p style={{ fontSize: 13, color: 'var(--txt3)' }}>
+          Log a few days to see your weekly average.
+        </p>
+      ) : (
+        <>
+          <div style={{ marginBottom: 16 }}>
+            <span style={{ fontSize: 30, fontWeight: 700, color: 'var(--txt)', lineHeight: 1 }}>
+              {avg.kcal.toLocaleString()}
+            </span>
+            <span style={{ fontSize: 13, color: 'var(--txt3)', marginLeft: 6 }}>avg kcal / day</span>
+            <span style={{ fontSize: 13, color: 'var(--txt3)', marginLeft: 10 }}>
+              · target {targets.kcal.toLocaleString()}
+            </span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10 }}>
+            {[
+              { label: 'Protein', value: avg.protein, target: targets.protein, color: 'var(--primary)' },
+              { label: 'Carbs',   value: avg.carb,    target: targets.carb,   color: 'var(--blue)'    },
+              { label: 'Fat',     value: avg.fat,     target: targets.fat,    color: 'var(--amber)'   },
+              { label: 'Fiber',   value: avg.fiber,   target: targets.fiber,  color: 'var(--coral)'   },
+            ].map(({ label, value, target, color }) => (
+              <div key={label} style={{
+                padding: '12px 14px',
+                background: 'var(--bg)', border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-sm)',
+              }}>
+                <div style={{ fontSize: 11, color: 'var(--txt3)', marginBottom: 5 }}>{label}</div>
+                <div>
+                  <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--txt)' }}>{value}</span>
+                  <span style={{ fontSize: 11, color: 'var(--txt3)', marginLeft: 2 }}>g</span>
+                </div>
+                <div style={{ fontSize: 11, color, marginTop: 3 }}>target {target}g</div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </Card>
+  )
+}
+
 function FutureCard() {
   return (
     <Card style={{ padding: '22px 24px' }}>
@@ -259,6 +354,8 @@ export default function Dashboard() {
   const pKcal     = Math.round(totals.protein * 4)
   const cKcal     = Math.round(totals.carb * 4)
   const fKcal     = Math.round(totals.fat * 9)
+
+  const { avg, daysLogged } = calcWeeklyAvg()
 
   const macroRows = [
     { id: 'protein', macro: { value: Math.round(totals.protein), unit: 'g' }, target: targets.protein },
@@ -321,6 +418,11 @@ export default function Dashboard() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.35fr', gap: 14, marginBottom: 20 }}>
         <EnergyCard consumed={consumed} target={targets.kcal} pKcal={pKcal} cKcal={cKcal} fKcal={fKcal} />
         <MicroCard micro={totals.micro} />
+      </div>
+
+      {/* Weekly average */}
+      <div style={{ marginBottom: 20 }}>
+        <WeeklyAvgCard avg={avg} daysLogged={daysLogged} targets={targets} />
       </div>
 
       {/* Future features */}

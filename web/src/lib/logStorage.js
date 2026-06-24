@@ -43,6 +43,28 @@ export function loadTodayLog() {
   } catch { return [] }
 }
 
+// Load a specific date's log from localStorage, re-hydrating full food objects.
+// dateStr must be YYYY-MM-DD matching the todayStr() convention (UTC-based ISO).
+// Identical hydration path to loadTodayLog; returns [] on any error or missing date.
+export function loadLogForDate(dateStr) {
+  try {
+    const raw = localStorage.getItem(LOG_KEY)
+    if (!raw) return []
+    const all = JSON.parse(raw)
+    return (all[dateStr] || []).map(e => {
+      const food = FOOD_BY_ID(e.foodId) ?? usdaCacheGet(e.foodId)
+      if (!food) return null
+      return {
+        uid:        crypto.randomUUID(),
+        food,
+        grams:      e.grams,
+        variantId:  e.variantId ?? null,
+        displayQty: deriveDisplayQty(food, e.grams),
+      }
+    }).filter(Boolean)
+  } catch { return [] }
+}
+
 // Persist today's log. Stores only the minimal data needed to restore entries.
 // Other dates in the store are left untouched.
 export function saveTodayLog(log) {
