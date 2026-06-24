@@ -804,7 +804,7 @@ export default function Nutrition() {
   })
 
   return (
-    <div style={{ maxWidth: 920 }}>
+    <div>
 
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div style={{ marginBottom: 22 }}>

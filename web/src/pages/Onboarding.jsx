@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ACTIVITY, GOALS } from '../data/foodData.js'
 import { calcTargets, applyBalance } from '../lib/profile.js'
+import { CONTENT_WIDTH_NARROW } from '../lib/widths.js'
 
 // ── Shared style helpers ──────────────────────────────────────────────────────
 const inp = (w) => ({
@@ -283,7 +284,10 @@ export default function Onboarding({ onSave, onCancel, initialProfile }) {
         </div>
         <div style={{ fontSize: 12, color: 'var(--txt3)', marginTop: 3 }}>{stepLabel}</div>
       </div>
-      <div style={{ width: '100%', maxWidth: 540 }}>{children}</div>
+      {/* Onboarding renders via Layout's early return (no profile yet), bypassing the
+          app shell and Outlet entirely. The route-handle width system never applies here,
+          so this component constrains its own width using the shared constant directly. */}
+      <div style={{ width: '100%', maxWidth: CONTENT_WIDTH_NARROW }}>{children}</div>
     </div>
   )
 

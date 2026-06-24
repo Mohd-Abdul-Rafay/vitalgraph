@@ -101,8 +101,10 @@ function SectionHeader({ title, subtitle }) {
 
 // ── AI plan explainer ─────────────────────────────────────────────────────────
 // Sends the saved profile + computed targets to POST /explain-plan on the
-// local FastAPI backend. State lives here so it clears automatically when the
-// user navigates away, and we also reset it whenever the saved profile changes.
+// FastAPI backend. If VITE_BACKEND_URL is unset (e.g. Vercel frontend-only
+// deploy), ExplainCard renders a coming-soon state instead of a button that
+// would immediately error. Set VITE_BACKEND_URL=http://localhost:8000 locally.
+const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL ?? '').trim() || null
 const EXPLAIN_IDLE = { status: 'idle', text: '', error: '' }
 
 function ExplainCard() {
@@ -114,10 +116,33 @@ function ExplainCard() {
 
   if (!targets._meta) return null  // manual-override targets have no _meta — skip
 
+  // Backend not configured — intentional coming-soon state (mirrors sidebar SOON treatment)
+  if (!BACKEND_URL) {
+    return (
+      <Card style={{ padding: '18px 22px', marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+          <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--txt)' }}>
+            AI plan explainer
+          </span>
+          <span style={{
+            fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 4,
+            color: 'var(--violet)', background: 'var(--violet-soft)',
+          }}>
+            SOON
+          </span>
+        </div>
+        <p style={{ fontSize: 13, color: 'var(--txt3)', lineHeight: 1.55 }}>
+          Plain-language explanation of your personalised targets — how your BMR,
+          TDEE, and macro splits were calculated — powered by AI.
+        </p>
+      </Card>
+    )
+  }
+
   async function fetchExplanation() {
     setExplain({ status: 'loading', text: '', error: '' })
     try {
-      const res = await fetch('http://localhost:8000/explain-plan', {
+      const res = await fetch(`${BACKEND_URL}/explain-plan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -337,7 +362,7 @@ export default function Plan() {
   }
 
   return (
-    <div style={{ maxWidth: 660 }}>
+    <div>
 
       {/* Header */}
       <div style={{ marginBottom: 28 }}>

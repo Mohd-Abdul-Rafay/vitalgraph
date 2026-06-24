@@ -277,7 +277,7 @@ export default function Dashboard() {
   ]
 
   return (
-    <div style={{ maxWidth: 1100 }}>
+    <div>
 
       {/* Header */}
       <div style={{

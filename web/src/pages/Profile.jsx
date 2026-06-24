@@ -56,7 +56,7 @@ export default function Profile() {
 
   if (!profile) {
     return (
-      <div style={{ maxWidth: 480 }}>
+      <div>
         <h1 style={{ fontSize: 22, fontWeight: 750, color: 'var(--txt)', marginBottom: 6 }}>My profile</h1>
         <p style={{ fontSize: 13, color: 'var(--txt3)', marginBottom: 22 }}>
           No profile set up yet. Complete onboarding to see your stats here.
@@ -79,7 +79,7 @@ export default function Profile() {
   const heightIn  = Math.round((profile.heightCm % 30.48) / 2.54)
 
   return (
-    <div style={{ maxWidth: 600 }}>
+    <div>
 
       {/* Header */}
       <div style={{
