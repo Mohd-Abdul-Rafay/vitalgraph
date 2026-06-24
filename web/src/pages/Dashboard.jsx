@@ -1,22 +1,9 @@
+import { useState } from 'react'
 import { useProfile } from '../context/ProfileContext.jsx'
-import { GOALS } from '../data/foodData.js'
+import { GOALS, MICRO_META } from '../data/foodData.js'
 import { Drumstick, Wheat, Droplet, Leaf } from 'lucide-react'
-
-// Placeholder consumed values — replaced when nutrition log is shared across pages
-const PLACEHOLDER = {
-  consumed: 646,
-  protein: { value: 111, unit: 'g', kcalPer: 4 },
-  carbs:   { value: 24,  unit: 'g', kcalPer: 4 },
-  fat:     { value: 10,  unit: 'g', kcalPer: 9 },
-  fiber:   { value: 3,   unit: 'g', kcalPer: 0 },
-  micros: [
-    { label: 'Iron',        value: 3.3,  rda: 18,   unit: 'mg', pct: 18 },
-    { label: 'Calcium',     value: 355,  rda: 1000, unit: 'mg', pct: 36 },
-    { label: 'Potassium',   value: 1102, rda: 3400, unit: 'mg', pct: 32 },
-    { label: 'Vitamin A',   value: 520,  rda: 900,  unit: 'μg', pct: 58 },
-    { label: 'Vitamin C',   value: 12.8, rda: 90,   unit: 'mg', pct: 14 },
-  ],
-}
+import { loadTodayLog } from '../lib/logStorage.js'
+import { calcTotals } from '../lib/nutrition.js'
 
 const MACRO_STYLE = {
   protein: { color: 'var(--primary)', soft: 'var(--primary-soft)', Icon: Drumstick },
@@ -95,7 +82,6 @@ function MacroCard({ id, macro, target }) {
         </span>
       </div>
 
-      {/* Progress bar */}
       <div style={{ height: 5, borderRadius: 99, background: 'var(--border)', overflow: 'hidden' }}>
         <div style={{
           height: '100%', width: `${pct}%`, borderRadius: 99,
@@ -109,7 +95,7 @@ function MacroCard({ id, macro, target }) {
 function CalorieRing({ consumed, target }) {
   const r = 54, cx = 72, cy = 72
   const circ = 2 * Math.PI * r
-  const pct = Math.min(consumed / target, 1)
+  const pct = Math.min(consumed / (target || 1), 1)
 
   return (
     <svg viewBox="0 0 144 144" width={144} height={144} style={{ display: 'block' }}>
@@ -133,17 +119,14 @@ function CalorieRing({ consumed, target }) {
   )
 }
 
-function EnergyCard({ consumed, target }) {
-  const pKcal = PLACEHOLDER.protein.value * 4
-  const cKcal = PLACEHOLDER.carbs.value * 4
-  const fKcal = PLACEHOLDER.fat.value * 9
-  const rem   = Math.max(target - pKcal - cKcal - fKcal, 0)
+function EnergyCard({ consumed, target, pKcal, cKcal, fKcal }) {
+  const rem = Math.max(target - pKcal - cKcal - fKcal, 0)
 
   const legend = [
-    { label: 'Protein', kcal: pKcal, color: 'var(--primary)' },
-    { label: 'Carbs',   kcal: cKcal, color: 'var(--blue)'    },
-    { label: 'Fat',     kcal: fKcal, color: 'var(--amber)'   },
-    { label: 'Remaining', kcal: rem, color: 'var(--border2)' },
+    { label: 'Protein',   kcal: pKcal, color: 'var(--primary)' },
+    { label: 'Carbs',     kcal: cKcal, color: 'var(--blue)'    },
+    { label: 'Fat',       kcal: fKcal, color: 'var(--amber)'   },
+    { label: 'Remaining', kcal: rem,   color: 'var(--border2)' },
   ]
 
   return (
@@ -152,9 +135,9 @@ function EnergyCard({ consumed, target }) {
         Today's energy
       </div>
       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
-        <CalorieRing consumed={PLACEHOLDER.consumed} target={target} />
+        <CalorieRing consumed={consumed} target={target} />
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', marginTop: 0 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px' }}>
         {legend.map(({ label, kcal, color }) => (
           <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
             <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
@@ -169,7 +152,7 @@ function EnergyCard({ consumed, target }) {
   )
 }
 
-function MicroCard() {
+function MicroCard({ micro }) {
   return (
     <Card style={{ display: 'flex', flexDirection: 'column' }}>
       <div style={{ marginBottom: 18 }}>
@@ -179,13 +162,15 @@ function MicroCard() {
         </div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {PLACEHOLDER.micros.map(({ label, value, rda, unit, pct }) => {
-          const good = pct >= 70
-          const barColor = good ? 'var(--primary)' : 'var(--amber)'
-          const status = good ? 'good' : 'low'
+        {Object.entries(MICRO_META).map(([key, { label, unit, rda }]) => {
+          const value = Math.round((micro[key] || 0) * 10) / 10
+          const pct   = (value / rda) * 100
+          const good  = pct >= 70
+          const barColor    = good ? 'var(--primary)' : 'var(--amber)'
+          const status      = good ? 'good' : 'low'
           const statusColor = good ? 'var(--primary)' : 'var(--amber)'
           return (
-            <div key={label}>
+            <div key={key}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
                 <span style={{ fontSize: 12.5, color: 'var(--txt)', fontWeight: 500 }}>{label}</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -262,18 +247,24 @@ function FutureCard() {
 
 export default function Dashboard() {
   const { profile, targets } = useProfile()
+  const [log] = useState(loadTodayLog)
+  const totals = calcTotals(log)
+
   const today = new Date().toLocaleDateString(undefined, {
     weekday: 'short', month: 'long', day: 'numeric',
   })
 
   const goalLabel = profile ? (GOALS.find(g => g.id === profile.goal)?.label ?? profile.goal) : 'Recomp'
-  const consumed  = PLACEHOLDER.consumed
+  const consumed  = Math.round(totals.kcal)
+  const pKcal     = Math.round(totals.protein * 4)
+  const cKcal     = Math.round(totals.carb * 4)
+  const fKcal     = Math.round(totals.fat * 9)
 
   const macroRows = [
-    { id: 'protein', macro: PLACEHOLDER.protein, target: targets.protein },
-    { id: 'carbs',   macro: PLACEHOLDER.carbs,   target: targets.carb   },
-    { id: 'fat',     macro: PLACEHOLDER.fat,      target: targets.fat    },
-    { id: 'fiber',   macro: PLACEHOLDER.fiber,    target: targets.fiber  },
+    { id: 'protein', macro: { value: Math.round(totals.protein), unit: 'g' }, target: targets.protein },
+    { id: 'carbs',   macro: { value: Math.round(totals.carb),    unit: 'g' }, target: targets.carb   },
+    { id: 'fat',     macro: { value: Math.round(totals.fat),     unit: 'g' }, target: targets.fat    },
+    { id: 'fiber',   macro: { value: Math.round(totals.fiber),   unit: 'g' }, target: targets.fiber  },
   ]
 
   return (
@@ -282,7 +273,7 @@ export default function Dashboard() {
       {/* Header */}
       <div style={{
         display: 'flex', alignItems: 'flex-start',
-        justifyContent: 'space-between', marginBottom: 28, gap: 16,
+        justifyContent: 'space-between', marginBottom: 20, gap: 16,
       }}>
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 750, color: 'var(--txt)', lineHeight: 1.2 }}>
@@ -312,6 +303,13 @@ export default function Dashboard() {
         </button>
       </div>
 
+      {/* Empty-state nudge — shown only until the first food is logged */}
+      {log.length === 0 && (
+        <p style={{ fontSize: 13, color: 'var(--txt3)', marginBottom: 20 }}>
+          Nothing logged yet — log your first food to see your day come together.
+        </p>
+      )}
+
       {/* Macro cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 20 }}>
         {macroRows.map(({ id, macro, target }) => (
@@ -321,8 +319,8 @@ export default function Dashboard() {
 
       {/* Energy ring + Micros */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.35fr', gap: 14, marginBottom: 20 }}>
-        <EnergyCard consumed={consumed} target={targets.kcal} />
-        <MicroCard />
+        <EnergyCard consumed={consumed} target={targets.kcal} pKcal={pKcal} cKcal={cKcal} fKcal={fKcal} />
+        <MicroCard micro={totals.micro} />
       </div>
 
       {/* Future features */}
